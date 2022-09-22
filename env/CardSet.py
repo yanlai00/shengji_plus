@@ -3,8 +3,20 @@ from random import shuffle
 import random
 from typing import Dict, List, Union
 import torch
+import itertools
 
-from env.utils import LETTER_RANK, TrumpSuite
+from env.utils import LETTER_RANK, CardSuite, TrumpSuite, get_suite
+
+class MoveType:
+    @property
+    def multiplier(self):
+        return 2
+    def __repr__(self) -> str:
+        return "MoveType"
+    
+    def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+        "Returns the suite of the move. For leading moves, return the suite. Follow moves don't have a suite."
+        return None
 
 class CardSet:
     def __init__(self, cardmap: Dict[str, int] = {}) -> None:
@@ -78,6 +90,14 @@ class CardSet:
     @property
     def size(self):
         return self.__len__()
+    
+    def count_suite(self, suite: CardSuite, dominant_suite: TrumpSuite, dominant_rank: int):
+        "Count the total number of cards the set has in the given CardSuite."
+        total_count = 0
+        for card, count in self._cards.items():
+            if get_suite(card, dominant_suite, dominant_rank) == suite:
+                total_count += count
+        return total_count
 
     def add_card(self, card: str, count=1):
         assert card in self._cards, "Card must be a valid string representation"
@@ -99,6 +119,13 @@ class CardSet:
     def remove_card(self, card: str):
         assert self._cards[card] >= 1, "Cannot play the given card"
         self._cards[card] -= 1
+    
+    def card_list(self):
+        "Return a list of cards contained in this CardSet."
+        ordering: List[str] = []
+        for card, count in self._cards.items():
+            ordering.extend([card] * count)
+        return ordering
 
     def to_tensor(self):
         return torch.zeros((1, 1)) # TODO
@@ -156,14 +183,14 @@ class CardSet:
             dominant_card = None
 
         if self._cards['DJ'] == 2 and self._cards['XJ'] == 2: # Four jokers always form a tractor
-            moves.append(MoveType.Tractor('XJ', 'DJ'))
+            moves.append(MoveType.Tractor('XJ', 'DJ', CardSet({'DJ': 2, 'XJ': 2})))
         if dominant_card is not None and self._cards[dominant_card] == 2:
             if self._cards['XJ'] == 2: # Small joker + dominant card
-                moves.append(MoveType.Tractor(dominant_card, 'XJ'))
+                moves.append(MoveType.Tractor(dominant_card, 'XJ', CardSet({'XJ': 2, dominant_card: 2})))
             for suite in filter(lambda s: s != dominant_suite, ['♣', '♠', '♦', '♥']):
                 subdominant_card = LETTER_RANK[dominant_rank] + suite
                 if self._cards[subdominant_card] == 2:
-                    moves.append(MoveType.Tractor(subdominant_card, dominant_card, CardSet({ dominant_card: 2, subdominant_card: 2 })))
+                    moves.append(MoveType.Tractor(subdominant_card, dominant_card, CardSet({dominant_card: 2, subdominant_card: 2})))
         elif self._cards['XJ'] == 2:
             # In NT mode, any pair of rank cards can be paired with small jokers to form a tractor
             for suite in ['♣', '♠', '♦', '♥']:
@@ -188,6 +215,99 @@ class CardSet:
                     end_index += 1
 
         return moves
+    
+    def get_matching_moves(self, move: MoveType, dominant_suite: TrumpSuite, dominant_rank: int):
+        move_suite = move.suite(dominant_suite, dominant_rank) # We need to first figure out the suite of the move the player is following.
+
+        # We don't currently support combination moves (甩牌) because they increase the action space exponentially.
+        def matches_for_simple_move(move: MoveType, hand: CardSet):
+            matches: List[MoveType] = []
+            same_suite_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suite(card, dominant_suite, dominant_rank) == move_suite}
+            
+            if isinstance(move, MoveType.Single):
+                if len(same_suite_cards) > 0:
+                    for card in same_suite_cards:
+                        matches.append(MoveType.Single(card))
+                else:
+                    for card, count in hand._cards.items():
+                        if count > 0:
+                            matches.append(MoveType.Single(card))
+            elif isinstance(move, MoveType.Pair):
+                suite_count = hand.count_suite(move_suite, dominant_suite, dominant_rank)
+                if suite_count > len(same_suite_cards): # If total count is greater than variety count, then there must be a duplicate
+                    for card, count in same_suite_cards.items():
+                        if count == 2:
+                            matches.append(MoveType.Pair(card))
+                elif suite_count >= 2:
+                    for c1, c2 in itertools.combinations(same_suite_cards):
+                        matches.append(MoveType.PassiveCombo(CardSet({c1: 1, c2: 1})))
+                elif suite_count == 1:
+                    fixed_card, _ = same_suite_cards.popitem()
+                    for card, count in hand._cards.items():
+                        if count > 0 and card != fixed_card:
+                            matches.append(MoveType.PassiveCombo(CardSet({fixed_card: 1, card: 1})))
+                else:
+                    chosen_records = set()
+                    for card1, card2 in itertools.combinations(hand.card_list(), 2):
+                        if (card1, card2) in chosen_records or (card2, card1) in chosen_records: continue # skip duplicates
+                        if card1 == card2 and get_suite(card1, dominant_suite, dominant_rank) == CardSuite.TRUMP:
+                            matches.append(MoveType.Pair(card1)) # Ruff move (毙)
+                        elif card1 == card2:
+                            matches.append(MoveType.PassiveCombo(CardSet({card1: 2})))
+                        else:
+                            chosen_records.add((card1, card2))
+                            matches.append(MoveType.PassiveCombo(CardSet({card1: 1, card2: 1})))
+            elif isinstance(move, MoveType.Tractor):
+                if suite_count >= move.cardset.size:
+                    # If there are enough cards in the suite, enumerate all possible tractors and check if the player has them
+                    ranks = list(range(2, 15)) # 2 to A
+                    ranks.remove(dominant_rank)
+                    for start_index in range(len(ranks) - move.cardset.size // 2):
+                        start_card = LETTER_RANK[ranks[start_index]] + move_suite # The starting point of a potential tractor
+                        if hand._cards[start_card] < 2: continue
+                        tractor_attempt = CardSet({start_card: 2})
+
+                        # Try to form a tractor from start_index with the same length as the original tractor.
+                        for i in range(1, len(move.cardset.size // 2)):
+                            next_card = LETTER_RANK[ranks[start_index + i]] + move_suite
+                            if hand._cards[next_card] < 2: break
+                            tractor_attempt.add_card(next_card, count=2)
+                        
+                        if tractor_attempt.size == move.cardset.size:
+                            matches.append(MoveType.Tractor(start_card, next_card, tractor_attempt))
+                    
+                if not matches: # if we did not find a tractor, the player needs to first play pairs
+                    pairs = set([card for (card, count) in same_suite_cards.items() if count == 2])
+                    if len(pairs) * 2 >= move.cardset.size: # If the player as at least as many pairs as the tractor size, choose any combination of the appropriate length
+                        for pair_subset in itertools.combinations(pairs, move.cardset.size // 2):
+                            matches.append(MoveType.PassiveCombo(CardSet({p:2 for p in pair_subset})))
+                
+                if not matches:
+                    # The player doesn't have enough pairs to add up to the length of the tractor, so they must play all those pairs, but in addition, they also need to play other cards of the same suite so that they add up to the tractor’s size.
+                    must_choose_cards = {p:2 for p in pairs}
+                    remaining_suite_choices = [c for c in same_suite_cards if c not in pairs]
+                    if len(pairs) * 2 + len(remaining_suite_choices) >= move.cardset.size:
+                        for remaining_suite_cards in itertools.combinations(remaining_suite_choices, move.cardset.size - len(pairs) * 2):
+                            cardset = CardSet(must_choose_cards)
+                            for card in remaining_suite_cards:
+                                cardset.add_card(card)
+                            matches.append(MoveType.PassiveCombo(cardset))
+                    else:
+                        for suite_choice in remaining_suite_choices:
+                            must_choose_cards[suite_choice] = 1
+                
+                if not matches: # The player doesn't have enough suite cards to match the tractor. So they must choose among the rest.
+                    remaining_other_choices = [c for c in self.card_list() if c not in must_choose_cards]
+                    for remaining_other_cards in itertools.combinations(remaining_other_choices, move.cardset.size - len(pairs) * 2 - len(remaining_suite_choices)):
+                        cardset = CardSet(must_choose_cards)
+                        for card in remaining_other_cards:
+                            cardset.add_card(card)
+                        matches.append(MoveType.PassiveCombo(cardset))
+
+            return matches
+
+        return matches_for_simple_move(move, self)
+                
 
     def __str__(self) -> str:
         return str({k:v for k, v in self._cards.items() if v > 0})
@@ -204,14 +324,6 @@ class CardSet:
         shuffle(ordering)
         return deck, ordering
 
-        
-
-class MoveType:
-    @property
-    def multiplier(self):
-        return 2
-    def __repr__(self) -> str:
-        return "MoveType"
 
 class MoveType:
     "All possible valid moves."
@@ -220,6 +332,8 @@ class MoveType:
             self.card = card
         def __repr__(self) -> str:
             return f"Single({self.card})"
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+            return get_suite(self.card, dominant_suite, dominant_rank)
 
     class Pair(MoveType):
         def __init__(self, card: str) -> None:
@@ -229,6 +343,8 @@ class MoveType:
         @property
         def multiplier(self):
             return 4
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+            return get_suite(self.card, dominant_suite, dominant_rank)
     
     class Tractor(MoveType):
         def __init__(self, low_card: str, high_card: str, cardset: CardSet) -> None:
@@ -240,8 +356,11 @@ class MoveType:
         @property
         def multiplier(self):
             return 16 if self.length == 2 else 64
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+            return get_suite(self.low_card, dominant_suite, dominant_rank)
     
     class Combo(MoveType):
+        "An active combo move. All elements in a combo are required to have the same CardSuite."
         def __init__(self, components: List[Union['MoveType.Single', 'MoveType.Pair', 'MoveType.Tractor']]) -> None:
             self.components = components
         def __repr__(self) -> str:
@@ -249,3 +368,15 @@ class MoveType:
         @property
         def multiplier(self):
             return max([c.multiplier for c in self.components])
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+            return self.components[0].suite(dominant_suite, dominant_rank)
+    
+    class PassiveCombo(MoveType):
+        "This class describes all other follow moves a player can play."
+        def __init__(self, cards: CardSet) -> None:
+            self.cards = cards
+        def __repr__(self) -> str:
+            return f"PassiveCombo({self.cards})"
+        @property
+        def multiplier(self):
+            return 1

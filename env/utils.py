@@ -5,6 +5,7 @@ from enum import Enum
 from typing import List, Union
 
 class TrumpSuite(str, Enum):
+    "All the possible suites for a trump declaration."
     CLUB = "♣"
     SPADE = "♠"
     HEART = "♥"
@@ -15,6 +16,14 @@ class TrumpSuite(str, Enum):
     @property
     def is_NT(self):
         return self == 'XJ' or self == 'DJ'
+
+class CardSuite(str, Enum):
+    "All suites that a card can belong to in a game."
+    CLUB = "♣"
+    SPADE = "♠"
+    HEART = "♥"
+    DIAMOND = "♦"
+    TRUMP = 'T'
 
 class RelativePosition(str, Enum):
     LEFT = 'L'
@@ -70,3 +79,18 @@ LETTER_RANK = {
     13: 'K',
     14: 'A',
 }
+
+NUMERIC_RANK = {v:k for k,v in LETTER_RANK.items()}
+
+def get_suite(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
+    "Determines if the card is a trump card, and if not, determines which suite it is in."
+    if card == 'XJ' or card == 'DJ':
+        return CardSuite.TRUMP
+    
+    rank = NUMERIC_RANK[card[:-1]]
+
+    if rank == dominant_rank:
+        return CardSuite.TRUMP
+    else:
+        suite = CardSuite(card[-1])
+        return CardSuite.TRUMP if dominant_suite == suite else suite
