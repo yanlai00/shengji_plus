@@ -71,13 +71,13 @@ class TestCardSet(unittest.TestCase):
             '2' + TrumpSuite.CLUB: 2,
             '2' + TrumpSuite.SPADE: 2
         })
-        moves1 = cardset.get_leading_moves(2, TrumpSuite.SPADE)
-        moves2 = cardset.get_leading_moves(2, TrumpSuite.XJ)
+        moves1 = cardset.get_leading_moves(TrumpSuite.SPADE, 2)
+        moves2 = cardset.get_leading_moves(TrumpSuite.XJ, 2)
         self.assertEqual(len(moves1), 14) # 5 singles, 5 pairs, 4 tractors
         self.assertEqual(len(moves2), 14) # 5 singles, 5 pairs, 4 tractors
     
     def test_lead_actions_skip_dominant_rank(self):
-        moves = self.cardset_simple.get_leading_moves(dominant_rank=3, dominant_suite=TrumpSuite.HEART)
+        moves = self.cardset_simple.get_leading_moves(dominant_suite=TrumpSuite.HEART, dominant_rank=3)
         self.assertEqual(len(moves), 18) # 7 singles, 7 pairs, 4 tractors
     
     def test_count_suite(self):
@@ -117,6 +117,13 @@ class TestCardSet(unittest.TestCase):
         # Analysis: the player has no CLUB cards. So they can pick any two cards to play. If they play a trump pair, it's a RUFF so it's counted as a pair. If they choose any two other cards, it's counted as a passive combo.
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Pair('3♣'), TrumpSuite.HEART, 2)
         self.assertEqual(len(matching_moves), 28) # 7 pairs + 21 two card combos
+    
+    def test_matching_moves_tractor(self):
+        matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor('5♥', '6♥', CardSet({'5♥': 2, '6♥': 2})), TrumpSuite.HEART, 3)
+        self.assertEqual(len(matching_moves), 3) # Either [2♥ 2♥ 4♥ 4♥], [3♦ 3♦ 3♥ 3♥], or [3♥ 3♥ XJ XJ]
+
+        matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor('5♠', '6♠', CardSet({'5♠': 2, '6♠': 2})), TrumpSuite.HEART, 3)
+        print(len(matching_moves), matching_moves) # 161
 
 if __name__ == '__main__':
     unittest.main()

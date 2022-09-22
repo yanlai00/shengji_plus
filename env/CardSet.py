@@ -15,8 +15,8 @@ class MoveType:
         return "MoveType"
     
     def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
-        "Returns the suite of the move. For leading moves, return the suite. Follow moves don't have a suite."
-        return None
+        "Returns the suite of the move"
+        raise NotImplementedError
 
 class CardSet:
     def __init__(self, cardmap: Dict[str, int] = {}) -> None:
@@ -165,7 +165,7 @@ class CardSet:
             return self._cards['DJ'] + self._cards['XJ']
         return self._cards[LETTER_RANK[rank] + suite]
 
-    def get_leading_moves(self, dominant_rank: int, dominant_suite: TrumpSuite):
+    def get_leading_moves(self, dominant_suite: TrumpSuite, dominant_rank: int):
         "Return all possible move actions the player can make if they lead the trick."
         moves: List[MoveType] = []
 
@@ -221,66 +221,50 @@ class CardSet:
 
         # We don't currently support combination moves (甩牌) because they increase the action space exponentially.
         def matches_for_simple_move(move: MoveType, hand: CardSet):
-            matches: List[MoveType] = []
+            matches: List[CardSet] = []
             same_suite_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suite(card, dominant_suite, dominant_rank) == move_suite}
-            
+            suite_count = hand.count_suite(move_suite, dominant_suite, dominant_rank)
+
             if isinstance(move, MoveType.Single):
                 if len(same_suite_cards) > 0:
                     for card in same_suite_cards:
-                        matches.append(MoveType.Single(card))
+                        matches.append(CardSet({card: 1}))
                 else:
                     for card, count in hand._cards.items():
                         if count > 0:
-                            matches.append(MoveType.Single(card))
+                            matches.append(CardSet({card: 1}))
             elif isinstance(move, MoveType.Pair):
-                suite_count = hand.count_suite(move_suite, dominant_suite, dominant_rank)
                 if suite_count > len(same_suite_cards): # If total count is greater than variety count, then there must be a duplicate
                     for card, count in same_suite_cards.items():
                         if count == 2:
-                            matches.append(MoveType.Pair(card))
+                            matches.append(CardSet({card: 2}))
                 elif suite_count >= 2:
                     for c1, c2 in itertools.combinations(same_suite_cards):
-                        matches.append(MoveType.PassiveCombo(CardSet({c1: 1, c2: 1})))
+                        matches.append(CardSet({c1: 1, c2: 1}))
                 elif suite_count == 1:
                     fixed_card, _ = same_suite_cards.popitem()
                     for card, count in hand._cards.items():
                         if count > 0 and card != fixed_card:
-                            matches.append(MoveType.PassiveCombo(CardSet({fixed_card: 1, card: 1})))
+                            matches.append(CardSet({fixed_card: 1, card: 1}))
                 else:
                     chosen_records = set()
                     for card1, card2 in itertools.combinations(hand.card_list(), 2):
                         if (card1, card2) in chosen_records or (card2, card1) in chosen_records: continue # skip duplicates
-                        if card1 == card2 and get_suite(card1, dominant_suite, dominant_rank) == CardSuite.TRUMP:
-                            matches.append(MoveType.Pair(card1)) # Ruff move (毙)
-                        elif card1 == card2:
-                            matches.append(MoveType.PassiveCombo(CardSet({card1: 2})))
+                        if card1 == card2:
+                            matches.append(CardSet({card1: 2}))
                         else:
                             chosen_records.add((card1, card2))
-                            matches.append(MoveType.PassiveCombo(CardSet({card1: 1, card2: 1})))
+                            matches.append(CardSet({card1: 1, card2: 1}))
             elif isinstance(move, MoveType.Tractor):
                 if suite_count >= move.cardset.size:
                     # If there are enough cards in the suite, enumerate all possible tractors and check if the player has them
-                    ranks = list(range(2, 15)) # 2 to A
-                    ranks.remove(dominant_rank)
-                    for start_index in range(len(ranks) - move.cardset.size // 2):
-                        start_card = LETTER_RANK[ranks[start_index]] + move_suite # The starting point of a potential tractor
-                        if hand._cards[start_card] < 2: continue
-                        tractor_attempt = CardSet({start_card: 2})
-
-                        # Try to form a tractor from start_index with the same length as the original tractor.
-                        for i in range(1, len(move.cardset.size // 2)):
-                            next_card = LETTER_RANK[ranks[start_index + i]] + move_suite
-                            if hand._cards[next_card] < 2: break
-                            tractor_attempt.add_card(next_card, count=2)
-                        
-                        if tractor_attempt.size == move.cardset.size:
-                            matches.append(MoveType.Tractor(start_card, next_card, tractor_attempt))
-                    
-                if not matches: # if we did not find a tractor, the player needs to first play pairs
+                    tractors = [t for t in self.get_leading_moves(dominant_suite, dominant_rank) if isinstance(t, MoveType.Tractor) and t.cardset.size == move.cardset.size and t.suite(dominant_suite, dominant_rank) == move_suite]
+                    matches.extend([t.cardset for t in tractors])
+                if not matches: # if we did not find a tractor in the same suite, the player needs to first play pairs
                     pairs = set([card for (card, count) in same_suite_cards.items() if count == 2])
                     if len(pairs) * 2 >= move.cardset.size: # If the player as at least as many pairs as the tractor size, choose any combination of the appropriate length
                         for pair_subset in itertools.combinations(pairs, move.cardset.size // 2):
-                            matches.append(MoveType.PassiveCombo(CardSet({p:2 for p in pair_subset})))
+                            matches.append(CardSet({p:2 for p in pair_subset}))
                 
                 if not matches:
                     # The player doesn't have enough pairs to add up to the length of the tractor, so they must play all those pairs, but in addition, they also need to play other cards of the same suite so that they add up to the tractor’s size.
@@ -291,18 +275,21 @@ class CardSet:
                             cardset = CardSet(must_choose_cards)
                             for card in remaining_suite_cards:
                                 cardset.add_card(card)
-                            matches.append(MoveType.PassiveCombo(cardset))
+                            matches.append(cardset)
                     else:
                         for suite_choice in remaining_suite_choices:
                             must_choose_cards[suite_choice] = 1
                 
                 if not matches: # The player doesn't have enough suite cards to match the tractor. So they must choose among the rest.
                     remaining_other_choices = [c for c in self.card_list() if c not in must_choose_cards]
+                    records = set()
                     for remaining_other_cards in itertools.combinations(remaining_other_choices, move.cardset.size - len(pairs) * 2 - len(remaining_suite_choices)):
                         cardset = CardSet(must_choose_cards)
                         for card in remaining_other_cards:
                             cardset.add_card(card)
-                        matches.append(MoveType.PassiveCombo(cardset))
+                        if str(cardset) in records: continue
+                        records.add(str(cardset))
+                        matches.append(cardset)
 
             return matches
 
@@ -311,6 +298,9 @@ class CardSet:
 
     def __str__(self) -> str:
         return str({k:v for k, v in self._cards.items() if v > 0})
+    
+    def __repr__(self) -> str:
+        return f"CardSet({self})"
 
     @classmethod
     def new_deck(self):
@@ -370,13 +360,3 @@ class MoveType:
             return max([c.multiplier for c in self.components])
         def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
             return self.components[0].suite(dominant_suite, dominant_rank)
-    
-    class PassiveCombo(MoveType):
-        "This class describes all other follow moves a player can play."
-        def __init__(self, cards: CardSet) -> None:
-            self.cards = cards
-        def __repr__(self) -> str:
-            return f"PassiveCombo({self.cards})"
-        @property
-        def multiplier(self):
-            return 1
