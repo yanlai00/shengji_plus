@@ -33,6 +33,27 @@ class TestCardSet(unittest.TestCase):
             'DJ': 2
         })
 
+        self.cardset_big_suite = CardSet({
+            'A♥': 2,
+            'K♥': 2,
+            'Q♥': 2,
+            'J♥': 2,
+            '10♥': 2,
+            '4♥': 2,
+            '2♥': 2,
+
+            '3♣': 2,
+        })
+
+        self.cardset_multiple_small_tractors = CardSet({
+            'K♦': 2,
+            'Q♦': 2,
+            '10♦': 2,
+            '9♦': 2,
+            '7♦': 2,
+            '6♦': 2
+        })
+
         return super().setUp()
 
     def test_total_points(self):
@@ -73,12 +94,15 @@ class TestCardSet(unittest.TestCase):
         })
         moves1 = cardset.get_leading_moves(TrumpSuite.SPADE, 2)
         moves2 = cardset.get_leading_moves(TrumpSuite.XJ, 2)
-        self.assertEqual(len(moves1), 14) # 5 singles, 5 pairs, 4 tractors
-        self.assertEqual(len(moves2), 14) # 5 singles, 5 pairs, 4 tractors
+        self.assertEqual(len(moves1), 19) # 5 singles, 5 pairs, 4 length-2 tractors, 3 length-3 tractors, 2 length-4 tractors
+        self.assertEqual(len(moves2), 17) # 5 singles, 5 pairs, 4 length-2 tractors, 3 length-3 tractor
     
     def test_lead_actions_skip_dominant_rank(self):
         moves = self.cardset_simple.get_leading_moves(dominant_suite=TrumpSuite.HEART, dominant_rank=3)
-        self.assertEqual(len(moves), 18) # 7 singles, 7 pairs, 4 tractors
+        self.assertEqual(len(moves), 19) # 7 singles, 7 pairs, 4 length-2 tractors, 1 length-3 tractor
+
+        moves = self.cardset_big_suite.get_leading_moves(dominant_suite=TrumpSuite.HEART, dominant_rank=3)
+        self.assertEqual(len(moves), 32)
     
     def test_count_suite(self):
         # for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE, CardSuite.TRUMP]:
@@ -117,13 +141,54 @@ class TestCardSet(unittest.TestCase):
         # Analysis: the player has no CLUB cards. So they can pick any two cards to play. If they play a trump pair, it's a RUFF so it's counted as a pair. If they choose any two other cards, it's counted as a passive combo.
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Pair('3♣'), TrumpSuite.HEART, 2)
         self.assertEqual(len(matching_moves), 28) # 7 pairs + 21 two card combos
+
+        matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Pair('4♦'), TrumpSuite.HEART, 3)
+        self.assertEqual(len(matching_moves), 1)
     
     def test_matching_moves_tractor(self):
-        matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor('5♥', '6♥', CardSet({'5♥': 2, '6♥': 2})), TrumpSuite.HEART, 3)
+        # Analysis: the player has 3 exact matches (tractor of length 2)
+        matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor(CardSet({'5♥': 2, '6♥': 2})), TrumpSuite.HEART, 3)
         self.assertEqual(len(matching_moves), 3) # Either [2♥ 2♥ 4♥ 4♥], [3♦ 3♦ 3♥ 3♥], or [3♥ 3♥ XJ XJ]
 
-        matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor('5♠', '6♠', CardSet({'5♠': 2, '6♠': 2})), TrumpSuite.HEART, 3)
-        print(len(matching_moves), matching_moves) # 161
+        # Analysis: the player doesn't have a single match in the same suite. So they can choose any 4 cards.
+        matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor(CardSet({'5♠': 2, '6♠': 2})), TrumpSuite.HEART, 3)
+        self.assertEqual(len(matching_moves), 161)
+
+        # Analysis: the player doesn't have a tractor, but has one or more pairs. They have to play them first, then choose cards of the same suite, then any card.
+        matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Tractor(CardSet({'5♦': 2, '6♦': 2})), TrumpSuite.HEART, 3)
+        self.assertEqual(len(matching_moves), 1) # The player has 4 diamonds and needs to play all of them.
+
+        # Analysis: the player has [3♦ 3♦ 3♥ 3♥ XJ XJ] as a length-3 tractor
+        matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor(CardSet({'5♥': 2, '6♥': 2, '7♥': 2})), TrumpSuite.HEART, 3)
+        self.assertEqual(len(matching_moves), 1)
+
+        matching_moves = self.cardset_big_suite.get_matching_moves(MoveType.Tractor(CardSet({'6♥': 2, '7♥': 2})), TrumpSuite.HEART, 3)
+        self.assertEqual(len(matching_moves), 6)
+
+        # Analysis: the player has no length-3 tractors. They need to pick a length-2 tractor, and then pick some other pair.
+        matching_moves = self.cardset_multiple_small_tractors.get_matching_moves(MoveType.Tractor(CardSet({'3♦': 2, '4♦': 2, '5♦': 2})), TrumpSuite.HEART, 2)
+        self.assertEqual(len(matching_moves), 12)
+
+        # Analysis: the player has no length-4 tractors. They need to pick two length-2 tractors to play.
+        matching_moves = self.cardset_multiple_small_tractors.get_matching_moves(MoveType.Tractor(CardSet({'2♦': 2, '3♦': 2, '4♦': 2, '5♦': 2})), TrumpSuite.HEART, 14)
+        self.assertEqual(len(matching_moves), 3)
+
+
+    def test_combo_moves(self):
+        decomposition = self.cardset_multiple_small_tractors.decompose(TrumpSuite.DJ, 2)
+        self.assertEqual(len(decomposition), 3)
+
+        # If the player can play combos, they can play any card combination of the same suite.
+        small_cardset = CardSet({'A♥': 1, 'K♥': 2, 'Q♥': 2, 'A♠': 1})
+        combo_moves = small_cardset.get_leading_moves(TrumpSuite.DJ, 2, include_combos=True)
+        self.assertEqual(len(combo_moves), 18) # 4 singles + 2 pairs + 1 tractor + 3 length-2 combos + 5 length-3 combos + 2 length-4 combos + 1 length-5 combo 
+
+        combo_moves = self.cardset_multiple_small_tractors.get_leading_moves(TrumpSuite.DJ, 2, include_combos=True)
+        self.assertEqual(len(combo_moves), 728) # Hard to tell if this is right
+
+        combo_lead_move = MoveType.Combo(CardSet({'A♦': 2, 'K♦': 1}), TrumpSuite.DJ, 3)
+        matching_moves = self.cardset_all_suites.get_matching_moves(combo_lead_move, TrumpSuite.DJ, 3)
+        self.assertEqual(len(matching_moves), 2) # Must play the pair of 2s, then choose either 9♦ or 10♦
 
 if __name__ == '__main__':
     unittest.main()
