@@ -234,11 +234,11 @@ class CardSet:
         Pair of b&w jokers: level 2
         Pair of color jokers: level 3
         """
-        options: Dict[str, int] = {}
+        options: Dict[TrumpSuite, int] = {}
         if self._cards["DJ"] == 2:
-            options["DJ"] = 3
+            options[TrumpSuite.DJ] = 3
         if self._cards["XJ"] == 2:
-            options["XJ"] = 2
+            options[TrumpSuite.XJ] = 2
         
         letter_rank = LETTER_RANK[rank]
         for suite in [TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.HEART, TrumpSuite.SPADE]:

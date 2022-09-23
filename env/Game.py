@@ -52,7 +52,7 @@ class Game:
             dealer_position = self.dealer_position.relative_to(position) if self.dealer_position else None,
             defender_points = self.defender_points,
             round_history = [(p.relative_to(position), cards) for p, cards in self.round_history],
-            leads = not self.round_history and position == self.dealer_position or self.round_history[-1][0] == position,
+            leads_current_trick = self.round_history[-1][0] == position if self.round_history else position == self.dealer_position,
             kitty = self.kitty if self.declaration and position == self.declaration.absolute_position else None,
             is_chaodi_turn = self.current_chaodi_turn == position 
         )

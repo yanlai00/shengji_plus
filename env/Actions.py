@@ -1,6 +1,6 @@
 # Defines all potential actions that a player can take during a game.
-from .CardSet import CardSet
-from .utils import LETTER_RANK, Declaration, MoveType, TrumpSuite
+from .CardSet import CardSet, MoveType
+from .utils import LETTER_RANK, Declaration, TrumpSuite
 
 class Action:
     "The base class of all actions. Should never be used directly."

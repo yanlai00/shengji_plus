@@ -31,7 +31,8 @@ class SJAgent:
             actions.append(DontChaodiAction())
             # TODO: chaodi
         elif observation.leads_current_round:
-            for move in observation.hand.get_leading_moves(observation.dominant_rank, observation.declaration.suite):
+            # For training purpose, maybe fire turn off combos?
+            for move in observation.hand.get_leading_moves(observation.declaration.suite, observation.dominant_rank, include_combos=True):
                 actions.append(LeadAction(move))
         
         return actions

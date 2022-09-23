@@ -47,13 +47,13 @@ class TestGame(unittest.TestCase):
 
         north_actions = north_player.get_actions(game.get_observation(AbsolutePosition.NORTH))
         self.assertEqual(sum([a.count for a in north_actions if isinstance(a, PlaceKittyAction)]), 33) # At this point, NORTH can choose from all 33 cards
-        print("Initial actions", north_actions)
+        print("Begin placing kitty actions:", north_actions)
 
         for i in range(8):
             game.run_action(north_actions[i], north_player.position)
         
         north_actions = north_player.get_actions(game.get_observation(AbsolutePosition.NORTH))
-        print("New actions", north_actions)
+        print("First round lead actions:", north_actions, f"({len(north_actions)} total)")
 
 
 
