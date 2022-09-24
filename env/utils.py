@@ -94,3 +94,22 @@ def get_suite(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
     else:
         suite = CardSuite(card[-1])
         return CardSuite.TRUMP if dominant_suite == suite else suite
+
+def get_rank(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
+    "Get the rank of a card within its suite."
+
+    if card == 'DJ':
+        return 18
+    elif card == 'XJ':
+        return 17
+    else:
+        suite = CardSuite(card[-1])
+        rank = NUMERIC_RANK[card[:-1]]
+        if rank == dominant_rank and (suite == dominant_suite or dominant_suite.is_NT):
+            return 16
+        elif rank == dominant_rank:
+            return 15
+        elif rank < dominant_rank:
+            return rank + 1 # shift the rank of cards smaller than dominant rank by 1 to support tractors across the dominant rank
+        else:
+            return rank

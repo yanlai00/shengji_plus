@@ -134,7 +134,7 @@ class TestCardSet(unittest.TestCase):
         matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Pair('3♠'), TrumpSuite.HEART, 2)
         self.assertEqual(len(matching_moves), 2) # Can play a pair of 10♠ or J♠
 
-        # Analysis: the player only has 1 CLUB card. They need play 1 additional card. There are 8 to choose from.
+        # Analysis: the player only has 1 CLUB card. They need to play 1 additional card. There are 8 to choose from.
         matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Pair('3♣'), TrumpSuite.HEART, 2)
         self.assertEqual(len(matching_moves), 8)
 
@@ -186,9 +186,135 @@ class TestCardSet(unittest.TestCase):
         combo_moves = self.cardset_multiple_small_tractors.get_leading_moves(TrumpSuite.DJ, 2, include_combos=True)
         self.assertEqual(len(combo_moves), 728) # Hard to tell if this is right
 
-        combo_lead_move = MoveType.Combo(CardSet({'A♦': 2, 'K♦': 1}), TrumpSuite.DJ, 3)
+        combo_lead_move = MoveType.Combo(CardSet({'A♦': 2, 'K♦': 1}))
         matching_moves = self.cardset_all_suites.get_matching_moves(combo_lead_move, TrumpSuite.DJ, 3)
         self.assertEqual(len(matching_moves), 2) # Must play the pair of 2s, then choose either 9♦ or 10♦
+
+    def test_cardset_compare_single(self):
+        # Single card can beat another single card if the rank is higher, or if it's a trump card but the other one is not
+        single_k_move = MoveType.Single('K♦')
+        single_ace = CardSet({'A♦': 1})
+        single_queen = CardSet({'Q♦': 1})
+        single_jack_heart = CardSet({'J♥': 1})
+        single_k_heart = CardSet({'K♥': 1})
+        
+        # Same suite cards. Compare rank only.
+        self.assertTrue(all([single_ace.is_bigger_than(single_k_move, suite, 2) for suite in (TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.DJ, TrumpSuite.HEART, TrumpSuite.SPADE)]))
+        self.assertFalse(all([single_queen.is_bigger_than(single_k_move, suite, 2) for suite in (TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.DJ, TrumpSuite.HEART, TrumpSuite.SPADE)]))
+
+        # Trump against non-trump (ruff)
+        self.assertTrue(single_jack_heart.is_bigger_than(single_k_move, TrumpSuite.HEART, 2))
+
+        # Non-trump against non-trump of different suite
+        self.assertFalse(single_jack_heart.is_bigger_than(single_k_move, TrumpSuite.CLUB, 2))
+
+        # Dominant rank is larger than other non-joker trump cards
+        self.assertTrue(single_queen.is_bigger_than(single_k_move, TrumpSuite.DIAMOND, 12))
+
+        # Dominant card should be larger than other dominant-rank cards
+        self.assertTrue(single_k_heart.is_bigger_than(single_k_move, TrumpSuite.HEART, 13))
+        self.assertFalse(single_k_heart.is_bigger_than(single_k_move, TrumpSuite.XJ, 13))
+        self.assertFalse(single_k_heart.is_bigger_than(single_k_move, TrumpSuite.XJ, 12))
+    
+    def test_cardset_compare_pair(self):
+        pair_ace_diamond = CardSet({'A♦': 2})
+        pair_king_heart = CardSet({'K♥': 2})
+        pair_queen_diamond = CardSet({'Q♦': 2})
+        pair_jokers = CardSet({'XJ': 2})
+        non_pair_jokers = CardSet({'XJ': 1, 'DJ': 1})
+
+        target_move = MoveType.Pair('K♦')
+
+        self.assertTrue(all([pair_ace_diamond.is_bigger_than(target_move, suite, 2) for suite in (TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.DJ, TrumpSuite.HEART, TrumpSuite.SPADE)]))
+        self.assertFalse(all([pair_king_heart.is_bigger_than(target_move, suite, 2) for suite in (TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.DJ, TrumpSuite.SPADE)]))
+        self.assertTrue(pair_king_heart.is_bigger_than(target_move, TrumpSuite.HEART, 2))
+        self.assertTrue(pair_king_heart.is_bigger_than(target_move, TrumpSuite.HEART, 13))
+        self.assertFalse(pair_queen_diamond.is_bigger_than(target_move, TrumpSuite.SPADE, 2))
+
+        # Two different jokers cannot beat any pair
+        self.assertFalse(non_pair_jokers.is_bigger_than(target_move, TrumpSuite.DJ, 2))
+
+        # Pair jokers beat any non-joker pair in any suite and any rank
+        self.assertTrue(all([pair_jokers.is_bigger_than(target_move, suite, 13) for suite in (TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.DJ, TrumpSuite.HEART, TrumpSuite.SPADE)]))
+
+    def test_cardset_compare_tractor(self):
+        target_tractor = CardSet({ '6♦': 2, '8♦': 2 }) # Assume 7 is dominant rank
+        target_move = MoveType.Tractor(target_tractor)
+
+        option1 = CardSet({ '7♥': 2, '7♦': 2 })
+        option2 = CardSet({ 'XJ': 2, '7♥': 2 })
+        option3 = CardSet({ '10♦': 2, 'J♦': 2 })
+        
+        # If either ♥ or ♦ is trump suite, then option1 forms a tractor
+        self.assertTrue(all([option1.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuite.DIAMOND, TrumpSuite.HEART)]))
+
+        # Otherwise, 7♦7♦ 7♥7♥ is not a tractor
+        self.assertFalse(all([option1.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuite.DJ, TrumpSuite.SPADE, TrumpSuite.CLUB)]))
+
+        # Option2 is a tractor if the trump suite is ♥ or NT 
+        self.assertTrue(all([option2.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuite.HEART, TrumpSuite.XJ)]))
+        self.assertFalse(all([option2.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuite.CLUB, TrumpSuite.SPADE, TrumpSuite.DIAMOND)]))
+
+        # Option3 is always a tractor given dominant rank = 7, and beats the target tractor
+        self.assertTrue(all([option3.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.HEART, TrumpSuite.SPADE, TrumpSuite.DJ)]))
+
+    def test_cardset_compare_combo(self):
+        target1 = CardSet({'A♦': 1, 'K♦': 2})
+        target2 = CardSet({'A♦': 1, 'K♦': 1, '8♦': 2, '9♦': 2})
+        
+        option1 = CardSet({'3♥': 2, '4♥': 1})
+        option2 = CardSet({'3♥': 2, '5♥': 2, '7♥': 2})
+
+        # Since 3♦ is a dominant card pair, it's larger than a pair of K♦. The single card doesn't matter in this case.
+        self.assertTrue(option1.is_bigger_than(MoveType.Combo(target1), TrumpSuite.HEART, 3))
+        self.assertTrue(option1.is_bigger_than(MoveType.Combo(target1), TrumpSuite.HEART, 4))
+        self.assertFalse(option1.is_bigger_than(MoveType.Combo(target1), TrumpSuite.DIAMOND, 3))
+        self.assertFalse(option1.is_bigger_than(MoveType.Combo(target1), TrumpSuite.DJ, 2))
+
+        # The player beats the target if they have a tractor and all cards are trump cards.
+        self.assertTrue(option2.is_bigger_than(MoveType.Combo(target2), TrumpSuite.HEART, 6))
+        self.assertFalse(option2.is_bigger_than(MoveType.Combo(target2), TrumpSuite.HEART, 2))
+        self.assertFalse(option2.is_bigger_than(MoveType.Combo(target2), TrumpSuite.DJ, 6))
+
+
+        
+    def test_multi_compare_combo(self):
+        # Player0 hands leading position to player2 in an NT game
+        player0_move = MoveType.Single('10♥')
+        player1_move = MoveType.Single('A♥') # beats player0
+        player2_move = MoveType.Single('2♦') # Ruff
+        player3_move = MoveType.Single('4♥') # follows
+        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.XJ, 2), 2)
+
+        # The player with the single largest card wins
+        player0_move = MoveType.Combo(CardSet({ 'A♥': 1, 'K♥': 1 })) # Combo
+        player1_move = MoveType.Combo(CardSet({ '2♠': 1, 'A♠': 1 })) # Ruff
+        player2_move = MoveType.Combo(CardSet({ 'XJ': 1, '5♠': 1 })) # Bigger ruff
+        player3_move = MoveType.Combo(CardSet({ 'Q♥': 1, '6♦': 1 })) # nothing
+
+        # Player 2 has the largest ruff, therefore wins the trick.
+        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 2)
+
+        # Player with the largest trump pair wins (given that they play 5 trump cards containing 2 pairs)
+        player0_move = MoveType.Combo(CardSet({ 'A♥': 2, 'K♥': 1, 'Q♥': 2 })) # Combo with 2 pairs and 1 single
+        player1_move = MoveType.Combo(CardSet({ '5♥': 2, '3♥': 1, '7♥': 1, 'J♥': 1 })) # Match suite
+        player2_move = MoveType.Combo(CardSet({ '6♠': 2, '7♠': 2, '2♣': 1 })) # Uses a tractor to ruff the combo
+        player3_move = MoveType.Combo(CardSet({ 'A♠': 2, '5♠': 2, '10♠': 1 })) # Beats player2 because only the largest pair matters here.
+        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 3)
+
+        # Player with the largest tractor wins
+        player0_move = MoveType.Tractor(CardSet({ '9♥': 2, '10♥': 2 })) # 1 tractor
+        player1_move = MoveType.Combo(CardSet({ 'A♥': 2, 'K♥': 2 })) # Beats player0 in same suite
+        player2_move = MoveType.Combo(CardSet({ '6♠': 2, '7♠': 2 })) # Ruffs using a tractor
+        player3_move = MoveType.Combo(CardSet({ '2♠': 2, '2♣': 2 })) # Ruffs using bigger tractor
+        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 3)
+
+        # Example where player0 is the biggest
+        player0_move = MoveType.Pair('Q♥')
+        player1_move = MoveType.Pair('3♥')
+        player2_move = MoveType.Combo(CardSet({ '10♠': 1, 'J♥': 1 })) # player2 escapes 10 points in trump suite
+        player3_move = MoveType.Combo(CardSet({ '5♥': 1, '9♥': 1 }))
+        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 0)
 
 if __name__ == '__main__':
     unittest.main()
