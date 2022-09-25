@@ -63,6 +63,24 @@ class Declaration:
     def relative_to(self, position: AbsolutePosition):
         return Declaration(self.suite, self.level, self.absolute_position, self.absolute_position.relative_to(position))
 
+    @classmethod
+    def chaodi_level(self, suite: TrumpSuite, level: int):
+        if level > 1:
+            if suite == TrumpSuite.DIAMOND:
+                return 1
+            elif suite == TrumpSuite.CLUB:
+                return 2
+            elif suite == TrumpSuite.HEART:
+                return 3
+            elif suite == TrumpSuite.SPADE:
+                return 4
+            elif suite == TrumpSuite.XJ:
+                return 5
+            else: # DJ
+                return 6
+        else:
+            return 0
+
     
 LETTER_RANK = {
     2: '2',

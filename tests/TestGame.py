@@ -21,8 +21,7 @@ class TestGame(unittest.TestCase):
         random.seed(1235)
 
         game = Game()
-        current_player = AbsolutePosition(max(game.hands.keys(), key=lambda x: game.hands[x].size))
-        # print("Start player:", current_player)
+        current_player = game.start_game()
         for _ in range(99):
             game.run_action(DontDeclareAction(), current_player)
             current_player = current_player.next_position
@@ -44,7 +43,7 @@ class TestGame(unittest.TestCase):
         self.assertEqual(sum([hand.size for hand in game.hands.values()]), 108) # all cards should be distributed
         self.assertEqual(game.hands[game.dealer_position].size, 33) # Dealer has 25 + 8 = 33 cards
         self.assertTrue(all([hand.size == 25 for player, hand in game.hands.items() if player != game.dealer_position]))
-        self.assertTrue(game.dealer_position == game.declaration.absolute_position == AbsolutePosition.NORTH) # WEST is now the new dealer
+        self.assertTrue(game.dealer_position == game.declarations[-1].absolute_position == AbsolutePosition.NORTH) # WEST is now the new dealer
 
         north_actions = game.get_observation(AbsolutePosition.NORTH).actions
         self.assertEqual(sum([a.count for a in north_actions if isinstance(a, PlaceKittyAction)]), 33) # At this point, NORTH can choose from all 33 cards

@@ -29,7 +29,7 @@ class Game:
         self.draw_stage_completed = False # True if all 100 cards are drawn and everyone had their chance to declare/redeclare.
         self.kitty_stage_completed = False # True if the kitty is fixed.
         self.dominant_rank = dominant_rank
-        self.declaration: Declaration = None # Information about who declared the trump suite, what it is, and its level
+        self.declarations: List[Declaration] = [] # Information about who declared the trump suite, what it is, and its level
         self.current_declaration_turn: AbsolutePosition = None # Once a player declares a trump suite, every other player takes turn to decide if they want to override.
         self.is_initial_game = dealer_position is None # Whether overriding the declaration lets the overrider becomes the dealer.
         self.dealer_position = dealer_position # Position of the dealer. At the start of game 1, the dealer is not determined yet.
@@ -44,7 +44,7 @@ class Game:
 
     @property
     def dominant_suite(self):
-        return self.declaration.suite if self.declaration else TrumpSuite.XJ
+        return self.declarations[-1].suite if self.declarations else TrumpSuite.XJ
 
     @property
     def game_started(self):
@@ -64,23 +64,23 @@ class Game:
 
         if not self.draw_stage_completed: # Stage 1: drawing cards phase
             for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                if self.declaration is None or self.declaration.level < level and (self.declaration.suite == suite or self.declaration.absolute_position != position):
+                if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suite == suite or self.declarations[-1].absolute_position != position) and False:
                     actions.append(DeclareAction(Declaration(suite, level, position)))
             actions.append(DontDeclareAction())
         elif self.hands[position].size > 25: # Stage 2: choosing the kitty
             for card, count in self.hands[position]._cards.items():
                 if count > 0: actions.append(PlaceKittyAction(card, count))
         elif self.current_chaodi_turn == position:
-            actions.append(DontChaodiAction())
             # Chaodi
             if self.enable_chaodi:
                 for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                    if self.declaration.level < level:
+                    if self.declarations and Declaration.chaodi_level(suite, level) > Declaration.chaodi_level(self.declarations[-1].suite, self.declarations[-1].level):
                         actions.append(ChaodiAction(Declaration(suite, level, position)))
-                        print(position, "can chaodi using", suite.value)
+                        print(position.value, "can chaodi using", suite.value)
+            actions.append(DontChaodiAction())
         elif self.round_history[-1][0] == position:
             # For training purpose, maybe first turn off combos?
-            for move in self.hands[position].get_leading_moves(self.declaration.suite, self.dominant_rank, include_combos=False):
+            for move in self.hands[position].get_leading_moves(self.declarations[-1].suite, self.dominant_rank, include_combos=False):
                 actions.append(LeadAction(move))
         else:
             # Combo is a catch-all type if we don't know the composition of the cardset
@@ -95,13 +95,13 @@ class Game:
             actions = actions,
             draw_completed = self.draw_stage_completed,
             dominant_rank = self.dominant_rank,
-            declaration = self.declaration.relative_to(position) if self.declaration else None,
+            declaration = self.declarations[-1].relative_to(position) if self.declarations else None,
             next_declaration_turn = self.current_declaration_turn.relative_to(position) if self.current_declaration_turn else None,
             dealer_position = self.dealer_position.relative_to(position) if self.dealer_position else None,
             defender_points = self.opponent_points,
             round_history = [(p.relative_to(position), cards) for p, cards in self.round_history],
             leads_current_trick = self.round_history[-1][0] == position if self.round_history else position == self.dealer_position,
-            kitty = self.kitty if self.declaration and position == self.declaration.absolute_position else None,
+            kitty = self.kitty if self.declarations and position == self.declarations[-1].absolute_position else None,
             is_chaodi_turn = self.current_chaodi_turn == position 
         )
 
@@ -132,11 +132,11 @@ class Game:
         elif isinstance(action, DeclareAction):
             if self.dealer_position is None or self.is_initial_game:
                 self.dealer_position = player_position # Round 1, player becomes dealer (抢庄)
-            assert self.declaration is None or self.declaration.level < action.declaration.level, "New trump suite declaration must have higher level than the existing one."
+            assert not self.declarations or self.declarations[-1].level < action.declaration.level, "New trump suite declaration must have higher level than the existing one."
             assert self.hands[player_position].get_count(action.declaration.suite, self.dominant_rank) >= 1, "Invalid declaration"
             
-            self.declaration = action.declaration
-            logging.info(f"Player {player_position} declared {self.declaration.suite} x {1 + int(self.declaration.level > 1)}")
+            self.declarations.append(action.declaration)
+            logging.info(f"Player {player_position} declared {action.declaration.suite} x {1 + int(action.declaration.level > 1)}")
             if action.declaration.level < 3:
                 self.current_declaration_turn = player_position.next_position
                 return self.current_declaration_turn, 0
@@ -154,38 +154,43 @@ class Game:
             self.hands[player_position].remove_card(action.card)
             logging.info(f"Player {player_position} discarded {action.card} to kitty")
             if self.kitty.size == 8:
-                self.round_history.append((player_position, []))
+                if not self.round_history:
+                    self.round_history.append((player_position, []))
                 logging.debug(f"Hands of all players:")
                 logging.debug(f"  North: {self.hands['N']}")
                 logging.debug(f"  West: {self.hands['W']}")
                 logging.debug(f"  South: {self.hands['S']}")
                 logging.debug(f"  East: {self.hands['E']}")
-            if self.kitty.size < 8 or not self.enable_chaodi or self.declaration and self.declaration.level == 3:
-                self.kitty_stage_completed = self.kitty.size == 8
-                return player_position, 0
+                logging.debug(f"  Kitty: {self.kitty}")
+            if self.kitty.size < 8:
+                return player_position, 0 # Current player needs to first finish placing kitty
+            if not self.enable_chaodi:
+                return self.dealer_position, 0
+            elif self.declarations and self.declarations[-1].level == 3:
+                return self.dealer_position, 0
             else:
                 self.current_chaodi_turn = player_position.next_position
-                return player_position.next_position, 0 # Begin chaodi
+                return player_position.next_position, 0
         
         elif isinstance(action, DontChaodiAction):
             logging.debug(f"Player {player_position} chose not to chaodi")
-            if self.current_chaodi_turn.next_position == self.declaration.absolute_position: # We went around the table and no one declared.
+            # Note: chaodi is only an option if no one declares.
+            if self.current_chaodi_turn.next_position == self.declarations[-1].absolute_position: # We went around the table and no one declared.
                 self.current_chaodi_turn = None
-                return self.declaration.absolute_position, 0
+                return self.declarations[-1].absolute_position, 0
             else:
                 self.current_chaodi_turn = self.current_chaodi_turn.next_position
                 return self.current_chaodi_turn, 0
 
         elif isinstance(action, ChaodiAction):
-            self.declaration = action.declaration
+            self.declarations.append(action.declaration)
             self.hands[player_position].add_cardset(self.kitty) # Player picks up kitty
             self.kitty.remove_cardset(self.kitty)
-            self.current_chaodi_turn = player_position.next_position
             logging.info(f"Player {player_position} chose to chaodi using {action.declaration.suite}")
-            if self.declaration.level == 3:
-                return self.dealer_position, 0 # If this player uses two jokers to chaodi, then we go straight to first trick
+            if action.declaration.level == 3:
+                return player_position, 0
             else:
-                return player_position.next_position, 0 # Otherwise, other players can still take turns to chaodi
+                return player_position, 0
         elif isinstance(action, LeadAction):
             logging.info(f"Round {len(self.round_history)}: {player_position.value} leads with {action.move}")
             self.round_history[-1][1].append(action.move.cardset)
@@ -252,7 +257,7 @@ class Game:
         print("")
         print("Game Status:")
         print("Dealer:", self.dealer_position.value)
-        print("Declarer:", self.declaration)
+        print("Declarers:", self.declarations)
         if self.round_history:
             print(f"Round history ({len(self.round_history)} total):")
             for leader, moves in self.round_history:
