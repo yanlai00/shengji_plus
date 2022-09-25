@@ -178,6 +178,13 @@ class CardSet:
             if self._cards[card] < other_cardset._cards[card]:
                 return False
         return True
+    
+    def filter_by_suite(self, suite: CardSuite, dominant_suite: TrumpSuite, dominant_rank: int):
+        subset = CardSet()
+        for card, count in self._cards.items():
+            if count > 0 and get_suite(card, dominant_suite, dominant_rank) == suite:
+                subset.add_card(card, count)
+        return subset
 
     @property
     def size(self):
@@ -554,6 +561,30 @@ class CardSet:
                     return None
         else:
             raise AssertionError("Shouldn't get here")
+
+    @classmethod
+    def is_legal_combo(self, move: MoveType.Combo, other_players_cardsets: List['CardSet'], dominant_suite: TrumpSuite, dominant_rank: int):
+        filtered_cardsets: List[CardSet] = [c.filter_by_suite(move.suite(dominant_suite, dominant_rank), dominant_suite, dominant_rank) for c in other_players_cardsets]
+        
+        def key_fn(move: MoveType):
+            "Returns the maximum rank of the largest component of a move"
+            return (move.cardset.size, max([get_rank(card, dominant_suite, dominant_rank) for card in move.cardset.card_list()]))
+        
+        decomposition = sorted(move.cardset.decompose(dominant_suite, dominant_rank), key=lambda m: m.cardset.size)
+        if len(decomposition) == 1: return True, None
+        for component in decomposition:
+            for cardset in filtered_cardsets:
+                if cardset.size < component.cardset.size: continue # If the player's total cards in the suite is less than the component, he cannot possibly suppress the combo
+                moves = [c.decompose(dominant_suite, dominant_rank)[0] for c in cardset.get_matching_moves(component, dominant_suite, dominant_rank)]
+                moves: List[MoveType] = [m for m in moves if type(m) == type(component) and m.cardset.size == component.cardset.size]
+                
+                if moves:
+                    best_rank = max(map(key_fn, moves))
+                    if best_rank > key_fn(component):
+                        return False, min([m for m in decomposition if m.cardset.size == component.cardset.size], key=key_fn).cardset
+        
+        return True, None
+
 
     def __str__(self) -> str:
         return str({k:v for k, v in self._cards.items() if v > 0})

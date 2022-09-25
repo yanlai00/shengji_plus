@@ -12,7 +12,7 @@ class Simulation:
             AbsolutePosition.WEST: agent2,
             AbsolutePosition.EAST: agent2,
         }
-        self.game_engine = Game(enable_chaodi=True)
+        self.game_engine = Game(enable_chaodi=True, enable_combos=True)
         self.current_player = None
 
     def step(self):

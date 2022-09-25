@@ -11,7 +11,7 @@ from .CardSet import CardSet, MoveType
 import logging
 
 class Game:
-    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = False) -> None:
+    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False) -> None:
         # Player information
         self.hands = {
             AbsolutePosition.NORTH: CardSet(),
@@ -38,9 +38,12 @@ class Game:
         self.game_ended = False
         self.kitty_multiplier = None
         
-        # Chaodi mode only
+        # Chaodi mode
         self.enable_chaodi = enable_chaodi
         self.current_chaodi_turn: AbsolutePosition = None
+
+        # Combo mode
+        self.enable_combos = enable_combos
 
     @property
     def dominant_suite(self):
@@ -80,7 +83,7 @@ class Game:
             actions.append(DontChaodiAction())
         elif self.round_history[-1][0] == position:
             # For training purpose, maybe first turn off combos?
-            for move in self.hands[position].get_leading_moves(self.declarations[-1].suite, self.dominant_rank, include_combos=False):
+            for move in self.hands[position].get_leading_moves(self.dominant_suite, self.dominant_rank, include_combos=self.enable_combos):
                 actions.append(LeadAction(move))
         else:
             # Combo is a catch-all type if we don't know the composition of the cardset
@@ -167,6 +170,7 @@ class Game:
             if not self.enable_chaodi:
                 return self.dealer_position, 0
             elif self.declarations and self.declarations[-1].level == 3:
+                self.current_chaodi_turn = None
                 return self.dealer_position, 0
             else:
                 self.current_chaodi_turn = player_position.next_position
@@ -188,13 +192,21 @@ class Game:
             self.kitty.remove_cardset(self.kitty)
             logging.info(f"Player {player_position} chose to chaodi using {action.declaration.suite}")
             if action.declaration.level == 3:
+                self.current_chaodi_turn = None
                 return player_position, 0
             else:
                 return player_position, 0
         elif isinstance(action, LeadAction):
             logging.info(f"Round {len(self.round_history)}: {player_position.value} leads with {action.move}")
-            self.round_history[-1][1].append(action.move.cardset)
-            self.hands[player_position].remove_cardset(action.move.cardset)
+            other_player_hands = [self.hands[player_position.next_position], self.hands[player_position.next_position.next_position], self.hands[player_position.next_position.next_position.next_position]]
+            is_legal, penalty_move = CardSet.is_legal_combo(action.move, other_player_hands, self.dominant_suite, self.dominant_rank)
+            if is_legal:
+                self.round_history[-1][1].append(action.move.cardset)
+                self.hands[player_position].remove_cardset(action.move.cardset)
+            else:
+                self.round_history[-1][1].append(penalty_move)
+                self.hands[player_position].remove_cardset(penalty_move)
+                logging.info(f"Combo move failed. Player {player_position.value} forced to play {penalty_move}")
             return player_position.next_position, 0
         elif isinstance(action, FollowAction):
             logging.info(f"Round {len(self.round_history)}: {player_position.value} follows with {action.cardset}")

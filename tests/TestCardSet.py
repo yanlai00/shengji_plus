@@ -338,5 +338,27 @@ class TestCardSet(unittest.TestCase):
         tractor1 = MoveType.Combo(CardSet({ 'A♥': 1, '8♥': 2, '9♥': 2, '10♥': 2 }))
         self.assertEqual(tractor1.get_multiplier(TrumpSuite.HEART, 2), 64)
 
+    def test_legal_combo(self):
+        leading_move = MoveType.Combo(CardSet({'A♣': 1, 'Q♣': 2}))
+        player1 = CardSet({'K♣': 2, '10♣': 1, '4♣': 1})
+        player2 = CardSet({'J♣': 2, 'DJ': 1 })
+        player3 = CardSet({'A♣': 1, '9♣': 2})
+
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player1, player2, player3], TrumpSuite.HEART, 2), (False, CardSet({'Q♣': 2})))
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player2, player3], TrumpSuite.DIAMOND, 2), (True, None))
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player2], TrumpSuite.CLUB, 2), (False, CardSet({'A♣': 1})))
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player1, player2], TrumpSuite.CLUB, 4), (False, CardSet({'A♣': 1})))
+
+        leading_move = MoveType.Combo(CardSet({'K♣': 1, '6♣': 2, '7♣': 2}))
+        player1 = CardSet({'A♣': 1})
+        player2 = CardSet({'8♣': 2, '10♣': 2, 'K♣': 1})
+        player3 = CardSet({'DJ': 2, 'XJ': 2, '2♣': 1})
+
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player1], TrumpSuite.DIAMOND, 2), (False, CardSet({'K♣': 1})))
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player2, player3], TrumpSuite.HEART, 2), (True, None))
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player2], TrumpSuite.HEART, 9), (False, CardSet({'6♣': 2, '7♣': 2})))
+        self.assertEqual(CardSet.is_legal_combo(leading_move, [player3], TrumpSuite.CLUB, 2), (False, CardSet({'K♣': 1})))
+
+
 if __name__ == '__main__':
     unittest.main()

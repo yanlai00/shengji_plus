@@ -60,9 +60,6 @@ class TestGame(unittest.TestCase):
         sim = Simulation(RandomAgent('NS'), RandomAgent('WE'))
         logging.getLogger().setLevel(logging.DEBUG)
         
-        for _ in range(100):
-            sim.step()
-
         while sim.step()[0]: pass
         print("Game summary:")
         print(sim.game_engine.print_status())
