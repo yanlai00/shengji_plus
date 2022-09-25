@@ -39,7 +39,7 @@ class AbsolutePosition(str, Enum):
 
     def relative_to(self, position: 'AbsolutePosition') -> RelativePosition:
         "Helper function that converts an absolute seat position to a relative seat position."
-        return ['S', 'L', 'O', 'R'][(['N', 'W', 'S', 'E'].index(self) - ['N', 'W', 'S', 'E'].index(position)) % 4]
+        return ['S', 'L', 'O', 'R'][(['N', 'W', 'S', 'E'].index(position) - ['N', 'W', 'S', 'E'].index(self)) % 4]
 
     @property
     def next_position(self):
@@ -58,7 +58,7 @@ class Declaration:
         self.relative_position = relative_position # Depends on the position of the player that observes this declaration
 
     def __repr__(self) -> str:
-        return f"Declaration(position={self.absolute_position}, {self.suite}, {self.level})"
+        return f"Declaration(player={self.absolute_position}, cards={self.suite.value} x{1 + int(self.level > 1)})"
     
     def relative_to(self, position: AbsolutePosition):
         return Declaration(self.suite, self.level, self.absolute_position, self.absolute_position.relative_to(position))

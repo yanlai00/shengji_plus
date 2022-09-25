@@ -3,12 +3,14 @@
 from typing import List, Tuple
 from env.Actions import Action, DeclareAction, DontDeclareAction, PlaceKittyAction
 from env.CardSet import CardSet
-from env.utils import Declaration, RelativePosition
+from env.utils import AbsolutePosition, Declaration, RelativePosition
 
 
 class Observation:
-    def __init__(self, hand: CardSet, draw_completed: bool, dominant_rank: int, declaration: Declaration, next_declaration_turn: RelativePosition, dealer_position: RelativePosition, defender_points: int, round_history: List[Tuple[str, Tuple[CardSet]]], leads_current_trick = False, kitty: CardSet = None, is_chaodi_turn = False) -> None:
+    def __init__(self, hand: CardSet, position: AbsolutePosition, actions: List[Action], draw_completed: bool, dominant_rank: int, declaration: Declaration, next_declaration_turn: RelativePosition, dealer_position: RelativePosition, defender_points: int, round_history: List[Tuple[str, Tuple[CardSet]]], leads_current_trick = False, kitty: CardSet = None, is_chaodi_turn = False) -> None:
         self.hand = hand
+        self.position = position
+        self.actions = actions
         self.draw_completed = draw_completed
         self.dominant_rank = dominant_rank
         self.declaration = declaration

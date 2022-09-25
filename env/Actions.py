@@ -51,10 +51,11 @@ class LeadAction(Action):
         self.move = move
     
     def __repr__(self) -> str:
-        return f"LeadAction(move={self.move})"
+        return f"LeadAction({self.move})"
 
 class FollowAction(Action):
     "Follow the pattern of a previous player. Everyone except the first player in a trick will need to follow the pattern."
-    def __init__(self, player: str, cardset: CardSet) -> None:
-        super().__init__(player)
+    def __init__(self, cardset: CardSet) -> None:
         self.cardset = cardset
+    def __repr__(self) -> str:
+        return f"FollowAction({self.cardset})"

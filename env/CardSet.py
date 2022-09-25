@@ -1,4 +1,5 @@
 # Represent a set of cards in a Shengji game.
+import json
 from random import shuffle
 import random
 from typing import Dict, List, Set, Tuple, Union
@@ -32,6 +33,9 @@ class MoveType:
         @property
         def cardset(self):
             return CardSet({self.card: 1})
+        @property
+        def multiplier(self):
+            return 2
         def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
             return get_suite(self.card, dominant_suite, dominant_rank)
 
@@ -68,7 +72,6 @@ class MoveType:
         "An active combo move. All elements in a combo are required to have the same CardSuite."
         def __init__(self, cardset: 'CardSet') -> None:
             self._cardset = cardset
-            self.components = None
         def __repr__(self) -> str:
             return f"Combo({self._cardset})"
         @property
@@ -76,9 +79,7 @@ class MoveType:
             print("Do not call .multiplier of combo directly! Use .get_multiplier(...) instead.")
             return 2
         def get_components(self, dominant_suite: TrumpSuite, dominant_rank: int):
-            if not self.components:
-                self.components = self._cardset.decompose(dominant_suite, dominant_rank)
-            return self.components
+            return self._cardset.decompose(dominant_suite, dominant_rank)
         def get_multiplier(self, dominant_suite: TrumpSuite, dominant_rank: int):
             return max([c.multiplier for c in self.get_components(dominant_suite, dominant_rank)])
         @property
@@ -86,6 +87,14 @@ class MoveType:
             return self._cardset
         def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
             return self.get_components(dominant_suite, dominant_rank)[0].suite(dominant_suite, dominant_rank)
+
+    @classmethod
+    def from_cardset(self, cardset: 'CardSet', dominant_suite: TrumpSuite, dominant_rank: int):
+        components = cardset.decompose(dominant_suite, dominant_rank)
+        if len(components) == 1:
+            return components[0]
+        else:
+            return MoveType.Combo(cardset)
 
 class CardSet:
     def __init__(self, cardmap: Dict[str, int] = {}) -> None:
@@ -220,9 +229,6 @@ class CardSet:
         for card, count in self._cards.items():
             ordering.extend([card] * count)
         return ordering
-
-    def to_tensor(self):
-        return torch.zeros((1, 1)) # TODO
     
     def total_points(self):
         "Count the total number of points in the current set."
@@ -331,7 +337,7 @@ class CardSet:
         
         return components
 
-    def get_matching_moves(self, target: MoveType.Tractor, dominant_suite: TrumpSuite, dominant_rank: int):
+    def get_matching_moves(self, target: MoveType, dominant_suite: TrumpSuite, dominant_rank: int):
         target_suite = target.suite(dominant_suite, dominant_rank) # We need to first figure out the suite of the move the player is following.
         
         # Convenient helper function that returns a list of longest tractors in a CardSet
@@ -346,8 +352,7 @@ class CardSet:
                     longest_tractors.append(t)
             return tractors[0].cardset.size, longest_tractors
 
-        # We don't currently support combination moves (甩牌) because they increase the action space exponentially.
-        def matches_for_simple_move(target: MoveType, hand: CardSet):
+        def matches_for_simple_move(target: Union[MoveType.Single, MoveType.Pair, MoveType.Tractor], hand: CardSet):
             matches: Set[CardSet] = set()
             same_suite_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suite(card, dominant_suite, dominant_rank) == target_suite}
             suite_count = hand.count_suite(target_suite, dominant_suite, dominant_rank)
@@ -361,12 +366,12 @@ class CardSet:
                         if count > 0:
                             matches.add(CardSet({card: 1}))
             elif isinstance(target, MoveType.Pair):
-                if suite_count > len(same_suite_cards): # If total count is greater than variety count, then there must be a duplicate
+                if suite_count > len(same_suite_cards): # If total count is greater than variety count, then there must be a pair
                     for card, count in same_suite_cards.items():
                         if count == 2:
                             matches.add(CardSet({card: 2}))
                 elif suite_count >= 2:
-                    for c1, c2 in itertools.combinations(same_suite_cards):
+                    for c1, c2 in itertools.combinations(same_suite_cards, 2):
                         matches.add(CardSet({c1: 1, c2: 1}))
                 elif suite_count == 1:
                     fixed_card, _ = same_suite_cards.popitem()
@@ -471,17 +476,18 @@ class CardSet:
                         if str(cardset) in records: continue
                         records.add(str(cardset))
                         matches.add(cardset)
-
-            return matches
+            
+            # Sorting makes the output order deterministic
+            return sorted(matches, key=lambda c: c.__str__())
 
         if isinstance(target, MoveType.Combo):
-            largest_component = max(target.components, key=lambda c: c.cardset.size)
+            largest_component = max(target.get_components(dominant_suite, dominant_rank), key=lambda c: c.cardset.size)
             remaining_target = CardSet(target.cardset._cards)
             remaining_target.remove_cardset(largest_component.cardset)
             
             component_matches = matches_for_simple_move(largest_component, self)
             if remaining_target.size > 0:
-                matches: Set[CardSet] = set()
+                matches: List[CardSet] = []
                 for c1_match in component_matches:
                     remaining_self = CardSet(self._cards)
                     remaining_self.remove_cardset(c1_match)
@@ -489,7 +495,7 @@ class CardSet:
                     for remaining_match in remaining_matches:
                         combined = CardSet(c1_match._cards)
                         combined.add_cardset(remaining_match)
-                        matches.add(combined)
+                        matches.append(combined)
                 return matches
             else:
                 return component_matches
@@ -526,22 +532,22 @@ class CardSet:
                 if self_suite == CardSuite.TRUMP or (self_suite == target_suite and self_max_rank > target_max_rank):
                     return [first_component]
         elif isinstance(move, MoveType.Combo):
-            # Assuming that the target move is valid, the only way for this player to beat it is to use trump cards
-            if self_suite != CardSuite.TRUMP: return None
+            if self_suite != CardSuite.TRUMP and self_suite != target_suite: return None
 
-            target_component = max(move.get_components(dominant_suite, dominant_rank), key=lambda c: c.cardset.size)
-            possible_matches = [c for c in self_components if type(c) == type(target_component) and c.cardset.size == target_component.cardset.size]
+            target_components = move.get_components(dominant_suite, dominant_rank)
+            target_max_component = max(target_components, key=lambda c: c.cardset.size)
+            possible_matches = [c for c in self_components if type(c) == type(target_max_component) and c.cardset.size == target_max_component.cardset.size]
 
             if not possible_matches:
                 return None
-            elif len(move.components) == 1:
+            elif len(target_components) == 1:
                 return [first_component] # This is the only component in the combo, and it's matched by the current player, so it's beaten
             else:
                 remaining_cards = CardSet(self._cards)
                 remaining_cards.remove_cardset(possible_matches[0].cardset)
                 remaining_target = CardSet(move.cardset._cards)
-                remaining_target.remove_cardset(target_component.cardset)
-                rest = remaining_cards.is_bigger_than(MoveType.Combo(remaining_target), dominant_suite, dominant_rank)
+                remaining_target.remove_cardset(target_max_component.cardset)
+                rest: Union[None, List[MoveType]] = remaining_cards.is_bigger_than(MoveType.Combo(remaining_target), dominant_suite, dominant_rank)
                 if rest:
                     return [first_component] + rest
                 else:
@@ -554,6 +560,17 @@ class CardSet:
     
     def __repr__(self) -> str:
         return f"CardSet({self})"
+    
+    @property
+    def tensor(self):
+        "Return a fixed size binary tensor representing the cardset."
+        rep = torch.zeros((54, 2)) # Each row is a card, each column is a count
+        for i, (card, count) in enumerate(sorted(self._cards.items())):
+            if count >= 1:
+                rep[i][0] = 1
+            if count == 2:
+                rep[i][1] = 1
+        return rep
 
     @classmethod
     def new_deck(self):
@@ -568,27 +585,34 @@ class CardSet:
         return deck, ordering
 
     @classmethod
-    def round_winner(self, moves: List[MoveType], dominant_suite: TrumpSuite, dominant_rank: int):
+    def round_winner(self, cardsets: List['CardSet'], dominant_suite: TrumpSuite, dominant_rank: int):
         "Determine the position of the largest move."
 
-        leading_move = moves[0]
-        follow_moves = moves[1:]
-        if len(follow_moves) == 0:
+        leading_move = MoveType.from_cardset(cardsets[0], dominant_suite, dominant_rank)
+        follow_cardsets = cardsets[1:]
+        if len(follow_cardsets) == 0:
             return 0
 
-        configs = [move.cardset.is_bigger_than(leading_move, dominant_suite, dominant_rank) for move in follow_moves]
+        configs = [move.is_bigger_than(leading_move, dominant_suite, dominant_rank) for move in follow_cardsets]
         
         def key_fn(move: MoveType):
             "Returns the maximum rank of the largest component of a move"
             return (move.cardset.size, max([get_rank(card, dominant_suite, dominant_rank) for card in move.cardset.card_list()]))
 
-        ranks = [1] + [0] * len(follow_moves)
+        ranks = [1] + [0] * len(follow_cardsets)
         for i, config in enumerate(configs, start=1):
             if config:
-                best_component = max(config, key=key_fn)
+                best_component: MoveType = max(config, key=key_fn)
                 # Add 100 to trump components so that they are definitely bigger than non-trump components.
                 ranks[i] = key_fn(best_component)[1] + (100 if best_component.suite(dominant_suite, dominant_rank) == CardSuite.TRUMP else 0)
         
-        return max(range(len(moves)), key=lambda i: ranks[i]) 
+        return max(range(len(cardsets)), key=lambda i: ranks[i]) 
 
+
+    @classmethod
+    def from_tensor(self, t: torch.Tensor):
+        cardset = CardSet()
+        for i, card in enumerate(sorted(cardset._cards)):
+            cardset.add_card(card, count=t[i].sum())
+        return cardset
 

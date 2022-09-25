@@ -239,7 +239,7 @@ class TestCardSet(unittest.TestCase):
 
     def test_cardset_compare_tractor(self):
         target_tractor = CardSet({ '6♦': 2, '8♦': 2 }) # Assume 7 is dominant rank
-        target_move = MoveType.Tractor(target_tractor)
+        target_move = MoveType.Combo(target_tractor) # Could use MoveType.Tractor(...) also
 
         option1 = CardSet({ '7♥': 2, '7♦': 2 })
         option2 = CardSet({ 'XJ': 2, '7♥': 2 })
@@ -280,41 +280,63 @@ class TestCardSet(unittest.TestCase):
         
     def test_multi_compare_combo(self):
         # Player0 hands leading position to player2 in an NT game
-        player0_move = MoveType.Single('10♥')
-        player1_move = MoveType.Single('A♥') # beats player0
-        player2_move = MoveType.Single('2♦') # Ruff
-        player3_move = MoveType.Single('4♥') # follows
-        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.XJ, 2), 2)
+        player0_cards = CardSet({'10♥': 1})
+        player1_cards = CardSet({'A♥': 1}) # beats player0
+        player2_cards = CardSet({'2♦': 1}) # Ruff
+        player3_cards = CardSet({'4♥': 1}) # follows
+        self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuite.XJ, 2), 2)
 
         # The player with the single largest card wins
-        player0_move = MoveType.Combo(CardSet({ 'A♥': 1, 'K♥': 1 })) # Combo
-        player1_move = MoveType.Combo(CardSet({ '2♠': 1, 'A♠': 1 })) # Ruff
-        player2_move = MoveType.Combo(CardSet({ 'XJ': 1, '5♠': 1 })) # Bigger ruff
-        player3_move = MoveType.Combo(CardSet({ 'Q♥': 1, '6♦': 1 })) # nothing
+        player0_cards = CardSet({ 'A♥': 1, 'K♥': 1 }) # Combo
+        player1_cards = CardSet({ '2♠': 1, 'A♠': 1 }) # Ruff
+        player2_cards = CardSet({ 'XJ': 1, '5♠': 1 }) # Bigger ruff
+        player3_cards = CardSet({ 'Q♥': 1, '6♦': 1 }) # nothing
 
         # Player 2 has the largest ruff, therefore wins the trick.
-        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 2)
+        self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuite.SPADE, 2), 2)
 
         # Player with the largest trump pair wins (given that they play 5 trump cards containing 2 pairs)
-        player0_move = MoveType.Combo(CardSet({ 'A♥': 2, 'K♥': 1, 'Q♥': 2 })) # Combo with 2 pairs and 1 single
-        player1_move = MoveType.Combo(CardSet({ '5♥': 2, '3♥': 1, '7♥': 1, 'J♥': 1 })) # Match suite
-        player2_move = MoveType.Combo(CardSet({ '6♠': 2, '7♠': 2, '2♣': 1 })) # Uses a tractor to ruff the combo
-        player3_move = MoveType.Combo(CardSet({ 'A♠': 2, '5♠': 2, '10♠': 1 })) # Beats player2 because only the largest pair matters here.
-        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 3)
+        player0_cards = CardSet({ 'A♥': 2, 'K♥': 1, 'Q♥': 2 }) # Combo with 2 pairs and 1 single
+        player1_cards = CardSet({ '5♥': 2, '3♥': 1, '7♥': 1, 'J♥': 1 }) # Match suite
+        player2_cards = CardSet({ '6♠': 2, '7♠': 2, '2♣': 1 }) # Uses a tractor to ruff the combo
+        player3_cards = CardSet({ 'A♠': 2, '5♠': 2, '10♠': 1 }) # Beats player2 because only the largest pair matters here.
+        self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuite.SPADE, 2), 3)
 
         # Player with the largest tractor wins
-        player0_move = MoveType.Tractor(CardSet({ '9♥': 2, '10♥': 2 })) # 1 tractor
-        player1_move = MoveType.Combo(CardSet({ 'A♥': 2, 'K♥': 2 })) # Beats player0 in same suite
-        player2_move = MoveType.Combo(CardSet({ '6♠': 2, '7♠': 2 })) # Ruffs using a tractor
-        player3_move = MoveType.Combo(CardSet({ '2♠': 2, '2♣': 2 })) # Ruffs using bigger tractor
-        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 3)
+        player0_cards = CardSet({ '9♥': 2, '10♥': 2 }) # 1 tractor
+        player1_cards = CardSet({ 'A♥': 2, 'K♥': 2 }) # Beats player0 in same suite
+        player2_cards = CardSet({ '6♠': 2, '7♠': 2 }) # Ruffs using a tractor
+        player3_cards = CardSet({ '2♠': 2, '2♣': 2 }) # Ruffs using bigger tractor
+        self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuite.SPADE, 2), 3)
 
         # Example where player0 is the biggest
-        player0_move = MoveType.Pair('Q♥')
-        player1_move = MoveType.Pair('3♥')
-        player2_move = MoveType.Combo(CardSet({ '10♠': 1, 'J♥': 1 })) # player2 escapes 10 points in trump suite
-        player3_move = MoveType.Combo(CardSet({ '5♥': 1, '9♥': 1 }))
-        self.assertEqual(CardSet.round_winner([player0_move, player1_move, player2_move, player3_move], TrumpSuite.SPADE, 2), 0)
+        player0_cards = CardSet({'Q♥': 2})
+        player1_cards = CardSet({'3♥': 2})
+        player2_cards = CardSet({ '10♠': 1, 'J♥': 1 }) # player2 escapes 10 points in trump suite
+        player3_cards = CardSet({ '5♥': 1, '9♥': 1 })
+        self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuite.SPADE, 2), 0)
+
+    def test_tensor_conversion(self):
+        t1 = self.cardset_simple.tensor
+        self.assertEqual(self.cardset_simple, CardSet.from_tensor(t1))
+
+        t2 = self.cardset_all_suites.tensor
+        self.assertEqual(self.cardset_all_suites, CardSet.from_tensor(t2))
+    
+    def test_multiplier(self):
+        base1 = MoveType.Combo(CardSet({ 'DJ': 1 }))
+        base2 = MoveType.Combo(CardSet({ 'A♥': 1, 'K♥': 1 }))
+        self.assertEqual(base1.get_multiplier(TrumpSuite.DJ, 2), 2)
+        self.assertEqual(base2.get_multiplier(TrumpSuite.CLUB, 2), 2)
+
+        double1 = MoveType.Combo(CardSet({ 'A♥': 2, 'K♥': 1 }))
+        double2 = MoveType.Combo(CardSet({ '2♥': 2, '2♣': 2 }))
+        self.assertEqual(double1.get_multiplier(TrumpSuite.CLUB, 2), 4)
+        self.assertEqual(double2.get_multiplier(TrumpSuite.DJ, 2), 4) # Not a tractor
+        self.assertEqual(double2.get_multiplier(TrumpSuite.CLUB, 2), 16) # Tractor
+
+        tractor1 = MoveType.Combo(CardSet({ 'A♥': 1, '8♥': 2, '9♥': 2, '10♥': 2 }))
+        self.assertEqual(tractor1.get_multiplier(TrumpSuite.HEART, 2), 64)
 
 if __name__ == '__main__':
     unittest.main()
