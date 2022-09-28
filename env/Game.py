@@ -177,9 +177,9 @@ class Game:
         elif isinstance(action, DontChaodiAction):
             logging.debug(f"Player {player_position} chose not to chaodi")
             # Note: chaodi is only an option if no one declares.
-            if self.current_chaodi_turn.next_position == self.declarations[-1].absolute_position: # We went around the table and no one declared.
+            if self.current_chaodi_turn.next_position == self.declarations[-1].absolute_position: # We went around the table and no one chaodied.
                 self.current_chaodi_turn = None
-                return self.declarations[-1].absolute_position, 0
+                return self.dealer_position, 0
             else:
                 self.current_chaodi_turn = self.current_chaodi_turn.next_position
                 return self.current_chaodi_turn, 0
