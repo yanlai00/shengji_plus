@@ -106,12 +106,12 @@ def get_suite(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
         return CardSuite.TRUMP
     
     rank = NUMERIC_RANK[card[:-1]]
-
-    if rank == dominant_rank:
+    suite = CardSuite(card[-1])
+    
+    if rank == dominant_rank or suite == dominant_suite:
         return CardSuite.TRUMP
     else:
-        suite = CardSuite(card[-1])
-        return CardSuite.TRUMP if dominant_suite == suite else suite
+        return suite
 
 def get_rank(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
     "Get the rank of a card within its suite."
