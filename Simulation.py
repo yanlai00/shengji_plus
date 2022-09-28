@@ -5,14 +5,14 @@ from env.utils import AbsolutePosition
 from env.Game import Game
 
 class Simulation:
-    def __init__(self, agent1: SJAgent, agent2: SJAgent) -> None:
+    def __init__(self, agent1: SJAgent, agent2: SJAgent, enable_chaodi=True) -> None:
         self.agents = {
             AbsolutePosition.NORTH: agent1,
             AbsolutePosition.SOUTH: agent1,
             AbsolutePosition.WEST: agent2,
             AbsolutePosition.EAST: agent2,
         }
-        self.game_engine = Game(enable_chaodi=True, enable_combos=True)
+        self.game_engine = Game(enable_chaodi=enable_chaodi, enable_combos=True) # DEBUG: chaodi is problematic
         self.current_player = None
 
     def step(self):

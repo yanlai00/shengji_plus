@@ -86,7 +86,7 @@ class Game:
             for move in self.hands[position].get_leading_moves(self.dominant_suite, self.dominant_rank, include_combos=self.enable_combos):
                 actions.append(LeadAction(move))
         else:
-            # Combo is a catch-all type if we don't know the composition of the cardset
+            # Combo is a catch-all type if we don't know the composition of the cardset 
             for cardset in self.hands[position].get_matching_moves(MoveType.Combo(self.round_history[-1][1][0]), self.dominant_suite, self.dominant_rank):
                 actions.append(FollowAction(cardset))
         
@@ -157,8 +157,6 @@ class Game:
             self.hands[player_position].remove_card(action.card)
             logging.info(f"Player {player_position} discarded {action.card} to kitty")
             if self.kitty.size == 8:
-                if not self.round_history:
-                    self.round_history.append((player_position, []))
                 logging.debug(f"Hands of all players:")
                 logging.debug(f"  North: {self.hands['N']}")
                 logging.debug(f"  West: {self.hands['W']}")
@@ -278,3 +276,32 @@ class Game:
         if self.kitty_multiplier:
             print(f"Opponents won the last round. Kitty points: {self.kitty.total_points()} x {self.kitty_multiplier}")
         print("Opponents' total points:", self.opponent_points)
+
+    def return_status(self):
+        # hands = {}
+        # hands['north'] = [self.hands['N'].size, self.hands['N']]
+        # hands['west'] = [self.hands['W'].size, self.hands['W']]
+        # hands['south'] = [self.hands['S'].size, self.hands['S']]
+        # hands['east'] = [self.hands['E'].size, self.hands['E']]
+
+        info = {}
+        info['dealer'] = self.dealer_position.value
+        info['declarer'] = self.declarations
+        info['kitty'] = self.kitty
+        info['opponents_total_points'] = self.opponent_points
+
+        rounds = []
+        leaders = []
+        moves = []
+        if self.round_history:
+            cnt = 1
+            for leader, move in self.round_history:
+                rounds.append(cnt)
+                leaders.append(leader)
+                moves.append(move)
+                cnt += 1
+
+        if self.kitty_multiplier:
+            print(f"Opponents won the last round. Kitty points: {self.kitty.total_points()} x {self.kitty_multiplier}")
+
+        return info, rounds, leaders, moves
