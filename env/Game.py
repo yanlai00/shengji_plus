@@ -79,14 +79,14 @@ class Game:
                 for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
                     if self.declarations and Declaration.chaodi_level(suite, level) > Declaration.chaodi_level(self.declarations[-1].suite, self.declarations[-1].level):
                         actions.append(ChaodiAction(Declaration(suite, level, position)))
-                        print(position.value, "can chaodi using", suite.value)
+                        logging.info(position.value, "can chaodi using", suite.value)
             actions.append(DontChaodiAction())
         elif self.round_history[-1][0] == position:
             # For training purpose, maybe first turn off combos?
             for move in self.hands[position].get_leading_moves(self.dominant_suite, self.dominant_rank, include_combos=self.enable_combos):
                 actions.append(LeadAction(move))
         else:
-            # Combo is a catch-all type if we don't know the composition of the cardset 
+            # Combo is a catch-all type if we don't know the composition of the cardset
             for cardset in self.hands[position].get_matching_moves(MoveType.Combo(self.round_history[-1][1][0]), self.dominant_suite, self.dominant_rank):
                 actions.append(FollowAction(cardset))
         
@@ -157,6 +157,8 @@ class Game:
             self.hands[player_position].remove_card(action.card)
             logging.info(f"Player {player_position} discarded {action.card} to kitty")
             if self.kitty.size == 8:
+                if not self.round_history:
+                    self.round_history.append((player_position, []))
                 logging.debug(f"Hands of all players:")
                 logging.debug(f"  North: {self.hands['N']}")
                 logging.debug(f"  West: {self.hands['W']}")
