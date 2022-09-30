@@ -276,8 +276,6 @@ class TestCardSet(unittest.TestCase):
         self.assertFalse(option2.is_bigger_than(MoveType.Combo(target2), TrumpSuite.HEART, 2))
         self.assertFalse(option2.is_bigger_than(MoveType.Combo(target2), TrumpSuite.DJ, 6))
 
-
-        
     def test_multi_compare_combo(self):
         # Player0 hands leading position to player2 in an NT game
         player0_cards = CardSet({'10♥': 1})

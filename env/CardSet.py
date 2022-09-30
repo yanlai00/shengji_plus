@@ -6,7 +6,7 @@ from typing import Dict, List, Set, Tuple, Union
 import torch
 import itertools
 
-from env.utils import LETTER_RANK, CardSuite, TrumpSuite, get_rank, get_suite
+from env.utils import LETTER_RANK, ORDERING, CardSuite, TrumpSuite, get_rank, get_suite
 
 class MoveType:
     pass
@@ -98,66 +98,7 @@ class MoveType:
 
 class CardSet:
     def __init__(self, cardmap: Dict[str, int] = {}) -> None:
-        self._cards = {
-            "A♣":  0,
-            "K♣":  0,
-            "Q♣":  0,
-            "J♣":  0,
-            "10♣": 0,
-            "9♣":  0,
-            "8♣":  0,
-            "7♣":  0,
-            "6♣":  0,
-            "5♣":  0,
-            "4♣":  0,
-            "3♣":  0,
-            "2♣":  0,
-
-            "A♠":  0,
-            "K♠":  0,
-            "Q♠":  0,
-            "J♠":  0,
-            "10♠": 0,
-            "9♠":  0,
-            "8♠":  0,
-            "7♠":  0,
-            "6♠":  0,
-            "5♠":  0,
-            "4♠":  0,
-            "3♠":  0,
-            "2♠":  0,
-
-            "A♦":  0,
-            "K♦":  0,
-            "Q♦":  0,
-            "J♦":  0,
-            "10♦": 0,
-            "9♦":  0,
-            "8♦":  0,
-            "7♦":  0,
-            "6♦":  0,
-            "5♦":  0,
-            "4♦":  0,
-            "3♦":  0,
-            "2♦":  0,
-
-            "A♥":  0,
-            "K♥":  0,
-            "Q♥":  0,
-            "J♥":  0,
-            "10♥": 0,
-            "9♥":  0,
-            "8♥":  0,
-            "7♥":  0,
-            "6♥":  0,
-            "5♥":  0,
-            "4♥":  0,
-            "3♥":  0,
-            "2♥":  0,
-
-            "DJ":  0,  # red joker
-            "XJ":  0   # black joker
-        }
+        self._cards = {card : 0 for card in ORDERING}
 
         for card, count in cardmap.items():
             self._cards[card] = count
@@ -591,17 +532,6 @@ class CardSet:
     
     def __repr__(self) -> str:
         return f"CardSet({self})"
-    
-    @property
-    def tensor(self):
-        "Return a fixed size binary tensor representing the cardset."
-        rep = torch.zeros((54, 2)) # Each row is a card, each column is a count
-        for i, (card, count) in enumerate(sorted(self._cards.items())):
-            if count >= 1:
-                rep[i][0] = 1
-            if count == 2:
-                rep[i][1] = 1
-        return rep
 
     @classmethod
     def new_deck(self):
@@ -639,11 +569,21 @@ class CardSet:
         
         return max(range(len(cardsets)), key=lambda i: ranks[i]) 
 
-
+    @property
+    def tensor(self):
+        "Return a fixed size binary tensor representing the cardset."
+        rep = torch.zeros((54, 2)) # Each row is a card, each column is a count
+        for i, card in enumerate(ORDERING):
+            if self._cards[card] >= 1:
+                rep[i][0] = 1
+            if self._cards[card] == 2:
+                rep[i][1] = 1
+        return rep
+    
     @classmethod
     def from_tensor(self, t: torch.Tensor):
         cardset = CardSet()
-        for i, card in enumerate(sorted(cardset._cards)):
+        for i, card in enumerate(ORDERING):
             cardset.add_card(card, count=t[i].sum())
         return cardset
 
