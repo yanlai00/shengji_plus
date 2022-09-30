@@ -359,6 +359,13 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(CardSet.is_legal_combo(leading_move, [player2], TrumpSuite.HEART, 9), (False, CardSet({'6♣': 2, '7♣': 2})))
         self.assertEqual(CardSet.is_legal_combo(leading_move, [player3], TrumpSuite.CLUB, 2), (False, CardSet({'K♣': 1})))
 
+    def test_trump_suite_tensor(self):
+        self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.DIAMOND.tensor), TrumpSuite.DIAMOND)
+        self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.CLUB.tensor), TrumpSuite.CLUB)
+        self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.HEART.tensor), TrumpSuite.HEART)
+        self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.SPADE.tensor), TrumpSuite.SPADE)
+        self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.XJ.tensor), TrumpSuite.XJ)
+        self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.DJ.tensor), TrumpSuite.DJ)
 
 if __name__ == '__main__':
     unittest.main()

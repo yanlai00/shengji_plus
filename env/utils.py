@@ -3,6 +3,7 @@
 import random
 from enum import Enum
 from typing import List, Union
+import torch
 
 class TrumpSuite(str, Enum):
     "All the possible suites for a trump declaration."
@@ -16,6 +17,18 @@ class TrumpSuite(str, Enum):
     @property
     def is_NT(self):
         return self == 'XJ' or self == 'DJ'
+    
+    @property
+    def tensor(self):
+        rep = torch.zeros(6)
+        idx = [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.XJ, self.DJ].index(self)
+        rep[idx] = 1
+        return rep
+    
+    @classmethod
+    def from_tensor(self, tensor: torch.Tensor) -> None:
+        assert tensor.shape[0] == 6 and torch.sum(tensor == 1) == 1 and tensor.sum() == 1, "tensor must be one hot encoded"
+        return [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.XJ, self.DJ][tensor.argmax()]
 
 class CardSuite(str, Enum):
     "All suites that a card can belong to in a game."
