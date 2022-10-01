@@ -63,6 +63,12 @@ class AbsolutePosition(str, Enum):
     def random(self):
         return random.choice([AbsolutePosition.NORTH, AbsolutePosition.SOUTH, AbsolutePosition.EAST, AbsolutePosition.WEST])
 
+class Stage(str, Enum):
+    declare_stage = 'DECLARE'
+    kitty_stage = 'KITTY'
+    chaodi_stage = 'CHAODI'
+    play_stage = 'PLAY'
+
 class Declaration:
     "Contains information about the trump suite being declared."
     def __init__(self, suite: TrumpSuite, level: int, position: AbsolutePosition, relative_position: RelativePosition = None) -> None:
@@ -76,6 +82,10 @@ class Declaration:
     
     def relative_to(self, position: AbsolutePosition):
         return Declaration(self.suite, self.level, self.absolute_position, self.absolute_position.relative_to(position))
+    
+    @property
+    def tensor(self):
+        return torch.cat([self.suite.tensor, torch.tensor([int(self.level > 1)])])
 
     @classmethod
     def chaodi_level(self, suite: TrumpSuite, level: int):

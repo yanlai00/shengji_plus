@@ -2,6 +2,7 @@
 import logging
 import random
 import sys
+from typing import List
 
 from env.Observation import Observation
 sys.path.append('.')
@@ -21,9 +22,9 @@ class SJAgent:
 
 class RandomAgent(SJAgent):
     def act(self, obs: Observation):
-        non_combo = []
-        combo = []
-        others = []
+        non_combo: List[Action] = []
+        combo: List[Action] = []
+        others: List[Action] = []
         for a in obs.actions:
             if isinstance(a, LeadAction):
                 if isinstance(a.move, MoveType.Combo):

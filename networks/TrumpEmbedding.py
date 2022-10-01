@@ -5,7 +5,7 @@ class TrumpEmbedding(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-        self.fc1 = nn.Linear(19, 64)
+        self.fc1 = nn.Linear(20, 64)
         self.fc2 = nn.Linear(64, 64)
         self.fc3 = nn.Linear(64, 64)
     

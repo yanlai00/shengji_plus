@@ -21,11 +21,8 @@ class DeclareAction(Action):
         return f"DeclareAction({self.declaration.suite}, lv={self.declaration.level})"
     @property
     def tensor(self) -> torch.Tensor:
-        "Shape: (9,)"
-        level_vector = torch.zeros(3)
-        for i in range(self.declaration.level):
-            level_vector[i] = 1
-        return torch.cat([self.declaration.suite.tensor, level_vector])
+        "Shape: (7,)"
+        return self.declaration.tensor
 
 
 class DontDeclareAction(Action):

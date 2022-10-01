@@ -57,7 +57,7 @@ class TestGame(unittest.TestCase):
 
     def test_random_game_simulation(self):
         random.seed(101)
-        sim = Simulation(RandomAgent('NS'), RandomAgent('WE'))
+        sim = Simulation(RandomAgent('Main'), RandomAgent('Declare'), RandomAgent('Kitty'), RandomAgent('Chaodi'))
         logging.getLogger().setLevel(logging.DEBUG)
         
         while sim.step()[0]: pass
