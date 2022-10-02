@@ -19,6 +19,12 @@ class Game:
             AbsolutePosition.WEST: CardSet(),
             AbsolutePosition.EAST: CardSet()
         }
+        self.public_cards = {
+            AbsolutePosition.NORTH: CardSet(),
+            AbsolutePosition.SOUTH: CardSet(),
+            AbsolutePosition.WEST: CardSet(),
+            AbsolutePosition.EAST: CardSet()
+        }
         self.unplayed_cards, card_list = CardSet.new_deck()
         self.deck = iter(card_list) # First 100 are drawn, last 8 given to dealer.
         self.kitty = CardSet() # dealer puts the kitty in 8 rounds, one card per round
@@ -70,7 +76,7 @@ class Game:
 
         if self.stage == Stage.declare_stage: # Stage 1: drawing cards phase
             for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suite == suite or self.declarations[-1].absolute_position != position) and False:
+                if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suite == suite or self.declarations[-1].absolute_position != position):
                     actions.append(DeclareAction(Declaration(suite, level, position)))
             actions.append(DontDeclareAction())
         elif self.hands[position].size > 25: # Stage 2: choosing the kitty
@@ -110,7 +116,10 @@ class Game:
             unplayed_cards = self.unplayed_cards,
             leads_current_trick = self.round_history[-1][0] == position if self.round_history else position == self.dealer_position,
             kitty = self.kitty if self.declarations and position == self.declarations[-1].absolute_position else None,
-            is_chaodi_turn = self.current_chaodi_turn == position 
+            is_chaodi_turn = self.current_chaodi_turn == position,
+            perceived_left = self.public_cards[position.last_position],
+            perceived_right = self.public_cards[position.next_position],
+            perceived_opposite = self.public_cards[position.next_position.next_position]
         )
 
         return observation
@@ -146,7 +155,9 @@ class Game:
             assert self.hands[player_position].get_count(action.declaration.suite, self.dominant_rank) >= 1, "Invalid declaration"
             
             self.declarations.append(action.declaration)
-            logging.info(f"Player {player_position} declared {action.declaration.suite} x {1 + int(action.declaration.level > 1)}")
+            print('Declare cards:', action.declaration.get_card(self.dominant_rank))
+            self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
+            logging.info(f"Player {player_position} declared {action.declaration.suite} x {1 + int(action.declaration.level >= 1)}")
             if action.declaration.level < 3:
                 self.current_declaration_turn = player_position.next_position
                 return self.current_declaration_turn, 0
@@ -205,6 +216,7 @@ class Game:
             self.declarations.append(action.declaration)
             self.hands[player_position].add_cardset(self.kitty) # Player picks up kitty
             self.kitty.remove_cardset(self.kitty)
+            self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
             logging.info(f"Player {player_position} chose to chaodi using {action.declaration.suite}")
             self.stage = Stage.kitty_stage
             if action.declaration.level == 3:
@@ -219,9 +231,20 @@ class Game:
             if is_legal:
                 self.round_history[-1][1].append(action.move.cardset)
                 self.hands[player_position].remove_cardset(action.move.cardset)
+                for card in action.move.cardset.card_list():
+                    if self.public_cards[player_position].has_card(card):
+                        self.public_cards[player_position].remove_card(card)
             else:
                 self.round_history[-1][1].append(penalty_move)
                 self.hands[player_position].remove_cardset(penalty_move)
+
+                # all the cards which the player failed to play are revealed to other players as public information
+                failed_cards = action.move.cardset
+                failed_cards.remove_cardset(penalty_move)
+                for (card, count) in failed_cards.count_iterator():
+                    if self.public_cards[player_position]._cards[card] < count:
+                        self.public_cards[player_position]._cards[card] = count
+
                 logging.info(f"Combo move failed. Player {player_position.value} forced to play {penalty_move}")
             return player_position.next_position, 0
         elif isinstance(action, FollowAction):
@@ -229,6 +252,9 @@ class Game:
             lead_position, moves = self.round_history[-1]
             self.hands[player_position].remove_cardset(action.cardset)
             moves.append(action.cardset)
+            for card in action.cardset.card_list():
+                if self.public_cards[player_position].has_card(card):
+                    self.public_cards[player_position].remove_card(card)
             if len(moves) == 4: # round finished, find max player and update points
                 winner_index = CardSet.round_winner(moves, self.dominant_suite, self.dominant_rank)
                 total_points = sum([c.total_points() for c in moves])
@@ -282,6 +308,13 @@ class Game:
         print(f" • West ({self.hands['W'].size}):", self.hands['W'])
         print(f" • South ({self.hands['S'].size}):", self.hands['S'])
         print(f" • East ({self.hands['E'].size}):", self.hands['E'])
+        print("")
+
+        print("Public cards:")
+        print(f" • North ({self.public_cards['N'].size}):", self.public_cards['N'])
+        print(f" • West ({self.public_cards['W'].size}):", self.public_cards['W'])
+        print(f" • South ({self.public_cards['S'].size}):", self.public_cards['S'])
+        print(f" • East ({self.public_cards['E'].size}):", self.public_cards['E'])
         print("")
         print("Game Status:")
         print("Dealer:", self.dealer_position.value)

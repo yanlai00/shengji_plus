@@ -98,7 +98,7 @@ class MoveType:
 
 class CardSet:
     def __init__(self, cardmap: Dict[str, int] = {}) -> None:
-        self._cards = {card : 0 for card in ORDERING}
+        self._cards: Dict[str, int] = {card : 0 for card in ORDERING}
 
         for card, count in cardmap.items():
             self._cards[card] = count
@@ -119,6 +119,9 @@ class CardSet:
             if self._cards[card] < other_cardset._cards[card]:
                 return False
         return True
+    
+    def has_card(self, card: str):
+        return self._cards[card] > 0
     
     def filter_by_suite(self, suite: CardSuite, dominant_suite: TrumpSuite, dominant_rank: int):
         subset = CardSet()
@@ -204,7 +207,7 @@ class CardSet:
         letter_rank = LETTER_RANK[rank]
         for suite in [TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.HEART, TrumpSuite.SPADE]:
             if self._cards[letter_rank + suite] >= 1:
-                options[suite] = self._cards[letter_rank + suite]
+                options[suite] = self._cards[letter_rank + suite] - 1
         
         return options
     
@@ -532,6 +535,11 @@ class CardSet:
     
     def __repr__(self) -> str:
         return f"CardSet({self})"
+    
+    def count_iterator(self):
+        for (card, count) in self._cards.items():
+            if count > 0:
+                yield (card, count)
 
     @classmethod
     def new_deck(self):
@@ -572,18 +580,18 @@ class CardSet:
     @property
     def tensor(self):
         "Return a fixed size binary tensor representing the cardset."
-        rep = torch.zeros((54, 2)) # Each row is a card, each column is a count
+        rep = torch.zeros(108)
         for i, card in enumerate(ORDERING):
             if self._cards[card] >= 1:
-                rep[i][0] = 1
+                rep[i * 2] = 1
             if self._cards[card] == 2:
-                rep[i][1] = 1
+                rep[i * 2 + 1] = 1
         return rep
     
     @classmethod
     def from_tensor(self, t: torch.Tensor):
         cardset = CardSet()
         for i, card in enumerate(ORDERING):
-            cardset.add_card(card, count=t[i].sum())
+            cardset.add_card(card, count=int(t[i * 2 : i * 2 + 2].sum()))
         return cardset
 

@@ -59,6 +59,10 @@ class AbsolutePosition(str, Enum):
     def next_position(self):
         return {'N': AbsolutePosition.WEST, 'W': AbsolutePosition.SOUTH, 'S': AbsolutePosition.EAST, 'E': AbsolutePosition.NORTH}[self]
     
+    @property
+    def last_position(self):
+        return {'N': AbsolutePosition.EAST, 'W': AbsolutePosition.NORTH, 'S': AbsolutePosition.WEST, 'E': AbsolutePosition.SOUTH}[self]
+
     @classmethod
     def random(self):
         return random.choice([AbsolutePosition.NORTH, AbsolutePosition.SOUTH, AbsolutePosition.EAST, AbsolutePosition.WEST])
@@ -86,6 +90,15 @@ class Declaration:
     @property
     def tensor(self):
         return torch.cat([self.suite.tensor, torch.tensor([int(self.level > 1)])])
+    
+    def get_card(self, dominant_rank: int):
+        rank_symbol = LETTER_RANK[dominant_rank]
+        count = 1 if self.level == 0 else 2
+        if self.suite == TrumpSuite.XJ or self.suite == TrumpSuite.DJ:
+            return self.suite.value, count
+        else:
+            return rank_symbol + self.suite.value, count
+
 
     @classmethod
     def chaodi_level(self, suite: TrumpSuite, level: int):
