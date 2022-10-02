@@ -44,6 +44,9 @@ class Game:
         self.defender_points = 0
         self.game_ended = False
         self.kitty_multiplier = None
+
+        self.final_opponent_reward: float = None
+        self.final_defender_reward: float = None
         
         # Chaodi mode
         self.enable_chaodi = enable_chaodi
@@ -288,6 +291,9 @@ class Game:
                         opponent_reward = -2
                     else:
                         opponent_reward = -3
+                    
+                    self.final_opponent_reward = opponent_reward
+                    self.final_defender_reward = -opponent_reward
                     
                     if player_position == self.dealer_position or player_position == self.dealer_position.next_position.next_position:
                         return None, -opponent_reward

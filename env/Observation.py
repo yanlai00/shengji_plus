@@ -71,7 +71,11 @@ class Observation:
     
     @property
     def unplayed_cards_tensor(self):
-        return self.unplayed_cards.tensor
+        "Returns a (108,) tensor representing all cards not played."
+        unplayed = CardSet(self.unplayed_cards._cards)
+        if self.kitty:
+            unplayed.remove_cardset(self.kitty)
+        return unplayed.tensor
     
     @property
     def perceived_cardsets(self):
