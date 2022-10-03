@@ -11,12 +11,34 @@ from env.utils import Stage
 from env.Observation import Observation
 from networks.Models import *
 
-class DeclareAgent(SJAgent):
-
-    def __init__(self, name: str, model: DeclarationModel) -> None:
+class DeepAgent(SJAgent):
+    def __init__(self, name: str, model: nn.Module) -> None:
         super().__init__(name)
 
         self.model = model
+        self.optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, alpha=0.99)
+        self.loss_fn = nn.MSELoss()
+        self.train_loss_history: List[float] = []
+    
+    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
+        raise NotImplementedError
+    
+    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
+        *args, rewards = self.prepare_batch_inputs(samples)
+
+        pred = self.model(*args)
+        loss = self.loss_fn(pred, rewards)
+        self.optimizer.zero_grad()
+        loss.backward()
+        # nn.utils.clip_grad_norm_(self.model.parameters(), 1000)
+        self.optimizer.step()
+        self.train_loss_history.append(loss.detach().item())
+
+class DeclareAgent(DeepAgent):
+
+    def __init__(self, name: str, model: DeclarationModel) -> None:
+        super().__init__(name, model)
+        self.model: DeclarationModel
 
     def act(self, obs: Observation):
         def reward(a: Action):
@@ -42,11 +64,10 @@ class DeclareAgent(SJAgent):
         return x_batch, gt_rewards
 
 
-class KittyAgent(SJAgent):
+class KittyAgent(DeepAgent):
     def __init__(self, name: str, model: KittyModel) -> None:
-        super().__init__(name)
-
-        self.model = model
+        super().__init__(name, model)
+        self.model: KittyModel
     
     def act(self, obs: Observation):
         def reward(a: Action):
@@ -74,12 +95,11 @@ class KittyAgent(SJAgent):
         return state_batch, action_batch, gt_rewards
 
 
-class ChaodiAgent(SJAgent):
+class ChaodiAgent(DeepAgent):
     def __init__(self, name: str, model: ChaodiModel) -> None:
-        super().__init__(name)
+        super().__init__(name, model)
+        self.model: ChaodiModel
 
-        self.model = model
-    
     def act(self, obs: Observation):
         def reward(a: Action):
             x_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
@@ -104,11 +124,10 @@ class ChaodiAgent(SJAgent):
         return x_batch, gt_rewards
      
     
-class MainAgent(SJAgent):
+class MainAgent(DeepAgent):
     def __init__(self, name: str, model: MainModel) -> None:
-        super().__init__(name)
-
-        self.model = model
+        super().__init__(name, model)
+        self.model: MainModel
     
     def act(self, obs: Observation):        
         def reward(a: Action):

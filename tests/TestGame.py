@@ -85,6 +85,13 @@ class TestGame(unittest.TestCase):
         while sim.step()[0]: pass
 
         print(sim.game_engine.print_status())
+        
+        breakpoint()
+        sim.declare_agent.learn_from_samples(sum(sim.declaration_history.values(), []))
+        sim.kitty_agent.learn_from_samples(sum(sim.place_kitty_history.values(), []))
+        sim.chaodi_agent.learn_from_samples(sum(sim.chaodi_history.values(), []))
+        sim.main_agent.learn_from_samples(sum(sim.main_history.values(), []))
+
 
 
 if __name__ == '__main__':

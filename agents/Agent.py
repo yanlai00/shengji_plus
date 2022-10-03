@@ -2,7 +2,7 @@
 import logging
 import random
 import sys
-from typing import List
+from typing import List, Tuple
 
 sys.path.append('.')
 from env.Observation import Observation
@@ -17,6 +17,9 @@ class SJAgent:
         self.name = name
     
     def act(self, obs: Observation):
+        raise NotImplementedError
+    
+    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
         raise NotImplementedError
 
 class RandomAgent(SJAgent):

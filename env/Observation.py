@@ -8,7 +8,7 @@ import torch
 
 class Observation:
     def __init__(self, hand: CardSet, position: AbsolutePosition, actions: List[Action], stage: Stage, dominant_rank: int, declaration: Declaration, next_declaration_turn: RelativePosition, dealer_position: RelativePosition, defender_points: int, opponent_points: int, round_history: List[Tuple[RelativePosition, List[CardSet]]], unplayed_cards: CardSet, leads_current_trick: bool, chaodi_times: List[int], kitty: CardSet = None, is_chaodi_turn = False, perceived_left = CardSet(), perceived_right = CardSet(), perceived_opposite = CardSet()) -> None:
-        self.hand = hand
+        self.hand = hand.copy()
         self.position = position
         self.actions = actions
         self.stage = stage
@@ -19,13 +19,13 @@ class Observation:
         self.defender_points = defender_points
         self.opponent_points = opponent_points
         self.round_history = round_history
-        self.unplayed_cards = unplayed_cards
+        self.unplayed_cards = unplayed_cards.copy()
         self.leads_current_round = leads_current_trick # If the player is going to lead the next trick
         self.chaodi_times = chaodi_times
         self.kitty = kitty # Only observable to the last person who placed the kitty. In chaodi mode, this might not be the dealer.
-        self.perceived_left = perceived_left
-        self.perceived_right = perceived_right
-        self.perceived_opposite = perceived_opposite
+        self.perceived_left = perceived_left.copy()
+        self.perceived_right = perceived_right.copy()
+        self.perceived_opposite = perceived_opposite.copy()
 
         self.historical_rounds = 10
 

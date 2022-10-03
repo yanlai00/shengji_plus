@@ -105,7 +105,7 @@ class Game:
         assert actions, f"Agent {position} has no action to choose from!"
 
         observation = Observation(
-            hand = self.hands[position].copy(),
+            hand = self.hands[position],
             position = position,
             actions = actions,
             stage = self.stage,
