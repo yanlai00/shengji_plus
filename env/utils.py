@@ -89,6 +89,7 @@ class Declaration:
     
     @property
     def tensor(self):
+        "A tensor of shape (7,) representing the suite and multiplicity of the declaration."
         return torch.cat([self.suite.tensor, torch.tensor([int(self.level > 1)])])
     
     def get_card(self, dominant_rank: int):
@@ -168,9 +169,3 @@ def get_rank(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
             return rank + 1 # shift the rank of cards smaller than dominant rank by 1 to support tractors across the dominant rank
         else:
             return rank
-
-def encode_single_card(card: str):
-    card_vector = torch.zeros(54)
-    i = ORDERING.index(card)
-    card_vector[i] = 1
-    return card_vector

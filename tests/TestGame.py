@@ -1,10 +1,12 @@
 import logging
 import random
-from time import sleep
 import unittest
 import sys
+import torch
 
 sys.path.append('.')
+from agents.RLAgents import ChaodiAgent, DeclareAgent, KittyAgent, MainAgent
+from networks.Models import ChaodiModel, DeclarationModel, KittyModel, MainModel
 from Simulation import Simulation
 from agents.Agent import RandomAgent, SJAgent
 from env.Actions import DeclareAction, DontDeclareAction, PlaceKittyAction
@@ -14,7 +16,10 @@ from env.Game import Game
 
 class TestGame(unittest.TestCase):
     def setUp(self) -> None:
-        random.seed(123)
+        random.seed(101)
+        torch.manual_seed(0)
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print("Using", self.device)
         return super().setUp()
 
     def test_gameplay(self):
@@ -64,6 +69,22 @@ class TestGame(unittest.TestCase):
         print("Game summary:")
         print(sim.game_engine.print_status())
 
+    def test_rl_agents(self):
+        declare_model = DeclarationModel().to(self.device)
+        kitty_model = KittyModel().to(self.device)
+        chaodi_model = ChaodiModel().to(self.device)
+        main_model = MainModel().to(self.device)
+        sim = Simulation(
+            main_agent=MainAgent('Main', main_model),
+            declare_agent=DeclareAgent('Declare', declare_model),
+            kitty_agent=KittyAgent('Kitty', kitty_model),
+            chaodi_agent=ChaodiAgent('Chaodi', chaodi_model)
+        )
+        logging.getLogger().setLevel(logging.DEBUG)
+        
+        while sim.step()[0]: pass
+
+        print(sim.game_engine.print_status())
 
 
 if __name__ == '__main__':

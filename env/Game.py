@@ -51,6 +51,7 @@ class Game:
         # Chaodi mode
         self.enable_chaodi = enable_chaodi
         self.current_chaodi_turn: AbsolutePosition = None
+        self.chaodi_times = [0, 0, 0, 0] # In the order N, W, S, E
 
         # Combo mode
         self.enable_combos = enable_combos
@@ -68,7 +69,6 @@ class Game:
         first_player = self.dealer_position or AbsolutePosition.random()
         next_card = next(self.deck)
         self.hands[first_player].add_card(next_card)
-        self.unplayed_cards.remove_card(next_card)
         return first_player
 
     def get_observation(self, position: AbsolutePosition) -> Observation:
@@ -105,7 +105,7 @@ class Game:
         assert actions, f"Agent {position} has no action to choose from!"
 
         observation = Observation(
-            hand = self.hands[position],
+            hand = self.hands[position].copy(),
             position = position,
             actions = actions,
             stage = self.stage,
@@ -118,11 +118,12 @@ class Game:
             round_history = [(p.relative_to(position), cards) for p, cards in self.round_history],
             unplayed_cards = self.unplayed_cards,
             leads_current_trick = self.round_history[-1][0] == position if self.round_history else position == self.dealer_position,
+            chaodi_times = self.chaodi_times,
             kitty = self.kitty if self.declarations and position == self.declarations[-1].absolute_position else None,
             is_chaodi_turn = self.current_chaodi_turn == position,
             perceived_left = self.public_cards[position.last_position],
             perceived_right = self.public_cards[position.next_position],
-            perceived_opposite = self.public_cards[position.next_position.next_position]
+            perceived_opposite = self.public_cards[position.next_position.next_position],
         )
 
         return observation
@@ -141,7 +142,6 @@ class Game:
                 assert self.hands[player_position.next_position].size < 25, "Current player already has 25 cards"
                 next_card = next(self.deck)
                 self.hands[player_position.next_position].add_card(next_card)
-                self.unplayed_cards.remove_card(next_card)
                 return player_position.next_position, 0
             else: # Otherwise, all 100 cards are drawn from the deck.
                 self.stage = Stage.kitty_stage
@@ -158,7 +158,6 @@ class Game:
             assert self.hands[player_position].get_count(action.declaration.suite, self.dominant_rank) >= 1, "Invalid declaration"
             
             self.declarations.append(action.declaration)
-            print('Declare cards:', action.declaration.get_card(self.dominant_rank))
             self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
             logging.info(f"Player {player_position} declared {action.declaration.suite} x {1 + int(action.declaration.level >= 1)}")
             if action.declaration.level < 3:
@@ -172,7 +171,6 @@ class Game:
             else:
                 next_card = next(self.deck)
                 self.hands[player_position.next_position].add_card(next_card)
-                self.unplayed_cards.remove_card(next_card)
                 return player_position.next_position, 0
         
         elif isinstance(action, PlaceKittyAction):
@@ -222,6 +220,7 @@ class Game:
             self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
             logging.info(f"Player {player_position} chose to chaodi using {action.declaration.suite}")
             self.stage = Stage.kitty_stage
+            self.chaodi_times[['N', 'W', 'S', 'E'].index(player_position)] += 1
             if action.declaration.level == 3:
                 self.current_chaodi_turn = None
                 return player_position, 0
@@ -234,12 +233,14 @@ class Game:
             if is_legal:
                 self.round_history[-1][1].append(action.move.cardset)
                 self.hands[player_position].remove_cardset(action.move.cardset)
+                self.unplayed_cards.remove_cardset(action.move.cardset)
                 for card in action.move.cardset.card_list():
                     if self.public_cards[player_position].has_card(card):
                         self.public_cards[player_position].remove_card(card)
             else:
                 self.round_history[-1][1].append(penalty_move)
                 self.hands[player_position].remove_cardset(penalty_move)
+                self.unplayed_cards.remove_cardset(penalty_move)
 
                 # all the cards which the player failed to play are revealed to other players as public information
                 failed_cards = action.move.cardset
@@ -255,6 +256,7 @@ class Game:
             lead_position, moves = self.round_history[-1]
             self.hands[player_position].remove_cardset(action.cardset)
             moves.append(action.cardset)
+            self.unplayed_cards.remove_cardset(action.cardset)
             for card in action.cardset.card_list():
                 if self.public_cards[player_position].has_card(card):
                     self.public_cards[player_position].remove_card(card)
@@ -295,13 +297,10 @@ class Game:
                     self.final_opponent_reward = opponent_reward
                     self.final_defender_reward = -opponent_reward
                     
-                    if player_position == self.dealer_position or player_position == self.dealer_position.next_position.next_position:
-                        return None, -opponent_reward
-                    else:
-                        return None, opponent_reward
+                    return None, 0 # Don't return rewards yet. They will be calculated in the end
                 else:
-                    self.round_history.append((lead_position, [])) # start new round
                     logging.info(f"Player {lead_position.value} wins round {len(self.round_history)}")
+                    self.round_history.append((lead_position, [])) # start new round
                 return lead_position, 0 # The next person to lead
             else:
                 return player_position.next_position, 0

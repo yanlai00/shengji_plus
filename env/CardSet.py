@@ -206,9 +206,8 @@ class CardSet:
         
         letter_rank = LETTER_RANK[rank]
         for suite in [TrumpSuite.CLUB, TrumpSuite.DIAMOND, TrumpSuite.HEART, TrumpSuite.SPADE]:
-            if self._cards[letter_rank + suite] >= 1:
-                options[suite] = self._cards[letter_rank + suite] - 1
-        
+            if self._cards[letter_rank + suite] > 0:
+                options[suite] = self._cards[letter_rank + suite] - 1 # Pair has level 1, single has level 0
         return options
     
     def get_count(self, suite: TrumpSuite, rank: int):
@@ -279,7 +278,7 @@ class CardSet:
     
     def decompose(self, dominant_suite: TrumpSuite, dominant_rank: int) -> List[Union[MoveType.Single, MoveType.Pair, MoveType.Tractor]]:
         "Decompose a leading move into components using a greedy approach."
-        remaining_cards = CardSet(self._cards)
+        remaining_cards = self.copy()
         components = []
         while remaining_cards.size > 0:
             largest = max(remaining_cards.get_leading_moves(dominant_suite, dominant_rank), key=lambda move: move.cardset.size)
@@ -365,7 +364,7 @@ class CardSet:
                             if max_non_overlapping_size != target.cardset.size:
                                 # How many of the tractors to use when forming the move
                                 tractor_selection_count = min(max_non_overlapping_size, target.cardset.size // s)
-                                reduced_cardset = CardSet(target.cardset._cards)
+                                reduced_cardset = target.cardset.copy()
                                 reduced_cardset.draw_N_cards(tractor_selection_count * s)
 
                                 if reduced_cardset.size > 2:
@@ -378,7 +377,7 @@ class CardSet:
                                 for maximal_combo in filter(lambda combo: len(combo) == max_non_overlapping_size, non_overlapping_tractors):
                                     for selected_tractors in itertools.combinations(maximal_combo, tractor_selection_count):
                                         partial_move = CardSet() # the partially constructed move
-                                        reduced_hand = CardSet(hand._cards) # the remaining cards the player can choose from
+                                        reduced_hand = hand.copy() # the remaining cards the player can choose from
                                         for tractor in selected_tractors:
                                             partial_move.add_cardset(tractor)
                                             reduced_hand.remove_cardset(tractor)
@@ -433,18 +432,18 @@ class CardSet:
 
         if isinstance(target, MoveType.Combo):
             largest_component = max(target.get_components(dominant_suite, dominant_rank), key=lambda c: c.cardset.size)
-            remaining_target = CardSet(target.cardset._cards)
+            remaining_target = target.cardset.copy()
             remaining_target.remove_cardset(largest_component.cardset)
             
             component_matches = matches_for_simple_move(largest_component, self)
             if remaining_target.size > 0:
                 matches: List[CardSet] = []
                 for c1_match in component_matches:
-                    remaining_self = CardSet(self._cards)
+                    remaining_self = self.copy()
                     remaining_self.remove_cardset(c1_match)
                     remaining_matches = remaining_self.get_matching_moves(MoveType.Combo(remaining_target), dominant_suite, dominant_rank)
                     for remaining_match in remaining_matches:
-                        combined = CardSet(c1_match._cards)
+                        combined = c1_match.copy()
                         combined.add_cardset(remaining_match)
                         matches.append(combined)
                 return matches
@@ -536,6 +535,9 @@ class CardSet:
     def __repr__(self) -> str:
         return f"CardSet({self})"
     
+    def copy(self):
+        return CardSet(self._cards)
+    
     def count_iterator(self):
         for (card, count) in self._cards.items():
             if count > 0:
@@ -579,7 +581,7 @@ class CardSet:
 
     @property
     def tensor(self):
-        "Return a fixed size binary tensor representing the cardset."
+        "Return a fixed size binary tensor of shape (108,) representing the cardset."
         rep = torch.zeros(108)
         for i, card in enumerate(ORDERING):
             if self._cards[card] >= 1:

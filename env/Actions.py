@@ -1,6 +1,6 @@
 # Defines all potential actions that a player can take during a game.
 from .CardSet import CardSet, MoveType
-from .utils import LETTER_RANK, Declaration, TrumpSuite, encode_single_card
+from .utils import LETTER_RANK, ORDERING, Declaration, TrumpSuite
 import torch
 
 class Action:
@@ -32,7 +32,7 @@ class DontDeclareAction(Action):
         return "DontDeclareAction()"
     @property
     def tensor(self) -> torch.Tensor:
-        return torch.zeros(9)
+        return torch.zeros(7)
 
 # Usually all possible actions are explicitly computed when a player is about to take an action. But there are (33 -> 8) possible ways for the dealer to select the kitty, so we decompose this stage into 8 actions. Each step the dealer choose one card to discard. He does this 8 times.
 class PlaceKittyAction(Action):
@@ -47,8 +47,8 @@ class PlaceKittyAction(Action):
             return f"Discard({self.card}, count={self.count})"
     @property
     def tensor(self) -> torch.Tensor:
-        "Shape: (54,)"
-        return encode_single_card(self.card)
+        "Shape: (1,)"
+        return torch.tensor(ORDERING.index(self.card))
         
 
 class ChaodiAction(Action):
@@ -79,7 +79,7 @@ class LeadAction(Action):
         return f"LeadAction({self.move})"
     @property
     def tensor(self) -> torch.Tensor:
-        "Shape: (54,2)"
+        "Shape: (108,)"
         return self.move.cardset.tensor
 
 class FollowAction(Action):
@@ -90,5 +90,5 @@ class FollowAction(Action):
         return f"FollowAction({self.cardset})"
     @property
     def tensor(self) -> torch.Tensor:
-        "Shape: (54,2)"
+        "Shape: (108,)"
         return self.cardset.tensor
