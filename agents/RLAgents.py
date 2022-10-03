@@ -19,29 +19,28 @@ class DeclareAgent(SJAgent):
         self.model = model
 
     def act(self, obs: Observation):
-        state_tensor = torch.cat([
-            obs.hand.tensor, # (108,)
-            obs.dealer_position_tensor, # (4,)
-            obs.trump_tensor, # (20,)
-            obs.declarer_position_tensor, # (4,)
-            obs.perceived_trump_cardsets, # (36,)
-        ])
-        assert state_tensor.shape[0] == 172
-
-        # Action tensor
-        best_value = -torch.inf
-        best_action = None
-        for action in obs.actions:
-            assert isinstance(action, DeclareAction) or isinstance(action, DontDeclareAction), "DeclareAgent can only handle declare actions"
-            new_value = self.model(torch.cat([state_tensor, action.tensor]).unsqueeze(0))
-            if new_value > best_value:
-                best_value = new_value
-                best_action = action
-        return best_action
+        def reward(a: Action):
+            x_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
+            return self.model(x_batch)
+        
+        return max(obs.actions, key=reward)
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
-        pass
-    
+        x_batch = torch.zeros((len(samples), 179))
+        gt_rewards = torch.zeros((len(samples), 1))
+        for i, (obs, ac, rw) in enumerate(samples):
+            assert isinstance(ac, DeclareAction) or isinstance(ac, DontDeclareAction), "DeclareAgent can only handle declare actions"
+            state_tensor = torch.cat([
+                obs.hand.tensor, # (108,)
+                obs.dealer_position_tensor, # (4,)
+                obs.trump_tensor, # (20,)
+                obs.declarer_position_tensor, # (4,)
+                obs.perceived_trump_cardsets, # (36,)
+            ])
+            x_batch[i] = torch.cat([state_tensor, ac.tensor])
+            gt_rewards[i] = rw
+        return x_batch, gt_rewards
+
 
 class KittyAgent(SJAgent):
     def __init__(self, name: str, model: KittyModel) -> None:
@@ -50,28 +49,29 @@ class KittyAgent(SJAgent):
         self.model = model
     
     def act(self, obs: Observation):
-        state_tensor = torch.cat([
-            obs.hand.tensor, # (108,)
-            obs.dealer_position_tensor, # (4,)
-            obs.trump_tensor, # (20,)
-            obs.declarer_position_tensor, # (4,)
-            obs.perceived_trump_cardsets, # (36,)
-        ])
-        assert state_tensor.shape[0] == 172
-
-        # Action tensor
-        best_value = -torch.inf
-        best_action = None
-        for action in obs.actions:
-            assert isinstance(action, PlaceKittyAction), "KittyAgent can only handle place kitty actions"
-            new_value = self.model(state_tensor.unsqueeze(0), action.tensor.unsqueeze(0))
-            if new_value > best_value:
-                best_value = new_value
-                best_action = action
-        return best_action
+        def reward(a: Action):
+            state_batch, action_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
+            return self.model(state_batch, action_batch)
+        
+        return max(obs.actions, key=reward)
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
-        pass
+        state_batch = torch.zeros((len(samples), 172))
+        action_batch = torch.zeros(len(samples), dtype=torch.int)
+        gt_rewards = torch.zeros((len(samples), 1))
+        for i, (obs, ac, rw) in enumerate(samples):
+            assert isinstance(ac, PlaceKittyAction), "KittyAgent can only handle place kitty actions"
+            state_tensor = torch.cat([
+                obs.hand.tensor, # (108,)
+                obs.dealer_position_tensor, # (4,)
+                obs.trump_tensor, # (20,)
+                obs.declarer_position_tensor, # (4,)
+                obs.perceived_trump_cardsets, # (36,)
+            ])
+            state_batch[i] = state_tensor
+            action_batch[i] = ac.tensor
+            gt_rewards[i] = rw
+        return state_batch, action_batch, gt_rewards
 
 
 class ChaodiAgent(SJAgent):
@@ -81,28 +81,27 @@ class ChaodiAgent(SJAgent):
         self.model = model
     
     def act(self, obs: Observation):
-        state_tensor = torch.cat([
-            obs.hand.tensor, # (108,)
-            obs.dealer_position_tensor, # (4,)
-            obs.trump_tensor, # (20,)
-            obs.declarer_position_tensor, # (4,)
-            obs.perceived_trump_cardsets, # (36,)
-        ])
-        assert state_tensor.shape[0] == 172
+        def reward(a: Action):
+            x_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
+            return self.model(x_batch)
 
-        # Action tensor
-        best_value = -torch.inf
-        best_action = None
-        for action in obs.actions:
-            assert isinstance(action, ChaodiAction) or isinstance(action, DontChaodiAction), "ChaodiAgent can only handle chaodi decisions"
-            new_value = self.model(torch.cat([state_tensor, action.tensor]).unsqueeze(0))
-            if new_value > best_value:
-                best_value = new_value
-                best_action = action
-        return best_action
+        return max(obs.actions, key=reward)
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
-        pass
+        x_batch = torch.zeros((len(samples), 178))
+        gt_rewards = torch.zeros((len(samples), 1))
+        for i, (obs, ac, rw) in enumerate(samples):
+            assert isinstance(ac, ChaodiAction) or isinstance(ac, DontChaodiAction), "ChaodiAgent can only handle chaodi decisions"
+            state_tensor = torch.cat([
+                obs.hand.tensor, # (108,)
+                obs.dealer_position_tensor, # (4,)
+                obs.trump_tensor, # (20,)
+                obs.declarer_position_tensor, # (4,)
+                obs.perceived_trump_cardsets, # (36,)
+            ])
+            x_batch[i] = torch.cat([state_tensor, ac.tensor])
+            gt_rewards[i] = rw
+        return x_batch, gt_rewards
      
     
 class MainAgent(SJAgent):
@@ -112,7 +111,7 @@ class MainAgent(SJAgent):
         self.model = model
     
     def act(self, obs: Observation):        
-        def reward(a):
+        def reward(a: Action):
             x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(x_batch, history_batch)
 
