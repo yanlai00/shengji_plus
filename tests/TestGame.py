@@ -87,10 +87,10 @@ class TestGame(unittest.TestCase):
         print(sim.game_engine.print_status())
         
         breakpoint()
-        sim.declare_agent.learn_from_samples(sum(sim.declaration_history.values(), []))
-        sim.kitty_agent.learn_from_samples(sum(sim.place_kitty_history.values(), []))
-        sim.chaodi_agent.learn_from_samples(sum(sim.chaodi_history.values(), []))
-        sim.main_agent.learn_from_samples(sum(sim.main_history.values(), []))
+        sim.declare_agent.learn_from_samples(sim.declaration_history)
+        sim.kitty_agent.learn_from_samples(sim.kitty_history)
+        sim.chaodi_agent.learn_from_samples(sim.chaodi_history)
+        sim.main_agent.learn_from_samples(sim.main_history)
 
 
 

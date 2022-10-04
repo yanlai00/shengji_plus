@@ -91,7 +91,7 @@ class Game:
                 for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
                     if self.declarations and Declaration.chaodi_level(suite, level) > Declaration.chaodi_level(self.declarations[-1].suite, self.declarations[-1].level):
                         actions.append(ChaodiAction(Declaration(suite, level, position)))
-                        logging.info(f"{position.value} can chaodi using {suite.value}")
+                        logging.debug(f"{position.value} can chaodi using {suite.value}")
             actions.append(DontChaodiAction())
         elif self.round_history[-1][0] == position:
             # For training purpose, maybe first turn off combos?
@@ -177,7 +177,7 @@ class Game:
             assert self.kitty.size < 8, "Kitty already has 8 cards"
             self.kitty.add_card(action.card)
             self.hands[player_position].remove_card(action.card)
-            logging.info(f"Player {player_position} discarded {action.card} to kitty")
+            logging.debug(f"Player {player_position} discarded {action.card} to kitty")
             if self.kitty.size == 8:
                 if not self.round_history:
                     self.round_history.append((player_position, []))
@@ -187,6 +187,7 @@ class Game:
                 logging.debug(f"  South: {self.hands['S']}")
                 logging.debug(f"  East: {self.hands['E']}")
                 logging.debug(f"  Kitty: {self.kitty}")
+                logging.info(f"Player {player_position.value} discarded kitty: {self.kitty}")
             else:
                 return player_position, 0 # Current player needs to first finish placing kitty
             
@@ -227,7 +228,7 @@ class Game:
             else:
                 return player_position, 0
         elif isinstance(action, LeadAction):
-            logging.info(f"Round {len(self.round_history)}: {player_position.value} leads with {action.move}")
+            logging.debug(f"Round {len(self.round_history)}: {player_position.value} leads with {action.move}")
             other_player_hands = [self.hands[player_position.next_position], self.hands[player_position.next_position.next_position], self.hands[player_position.next_position.next_position.next_position]]
             is_legal, penalty_move = CardSet.is_legal_combo(action.move, other_player_hands, self.dominant_suite, self.dominant_rank)
             if is_legal:
@@ -249,10 +250,10 @@ class Game:
                     if self.public_cards[player_position]._cards[card] < count:
                         self.public_cards[player_position]._cards[card] = count
 
-                logging.info(f"Combo move failed. Player {player_position.value} forced to play {penalty_move}")
+                logging.debug(f"Combo move failed. Player {player_position.value} forced to play {penalty_move}")
             return player_position.next_position, 0
         elif isinstance(action, FollowAction):
-            logging.info(f"Round {len(self.round_history)}: {player_position.value} follows with {action.cardset}")
+            logging.debug(f"Round {len(self.round_history)}: {player_position.value} follows with {action.cardset}")
             lead_position, moves = self.round_history[-1]
             self.hands[player_position].remove_cardset(action.cardset)
             moves.append(action.cardset)
@@ -299,7 +300,7 @@ class Game:
                     
                     return None, 0 # Don't return rewards yet. They will be calculated in the end
                 else:
-                    logging.info(f"Player {lead_position.value} wins round {len(self.round_history)}")
+                    logging.debug(f"Player {lead_position.value} wins round {len(self.round_history)}")
                     self.round_history.append((lead_position, [])) # start new round
                 return lead_position, 0 # The next person to lead
             else:

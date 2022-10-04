@@ -1,14 +1,18 @@
 # A class that simulates a game
+import logging
 import random
-from typing import Dict, List, Tuple
-from agents.Agent import SJAgent
+from typing import Deque, Dict, List, Tuple
+from agents.Agent import RandomAgent, SJAgent
 from env.Observation import Observation
 from env.utils import AbsolutePosition 
 from env.Game import Game, Stage
 from env.Actions import *
+from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.98, enable_combos=False) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.98, enable_combos=False, eval=False) -> None:
+        "If eval = True, use random agents for East and West."
+
         self.main_agent = main_agent
         self.declare_agent = declare_agent
         self.kitty_agent = kitty_agent
@@ -16,38 +20,46 @@ class Simulation:
         self.game_engine = Game(enable_chaodi=chaodi_agent is not None, enable_combos=enable_combos)
         self.current_player = None
         self.discount = discount
+        self.win_counts = [0, 0] # index 0 = wins of N and S; index 1 = wins of W and E
+        self.eval = eval
+        self.baseline = RandomAgent('random')
 
         # (state, action, reward) tuples for each player during the main stage of the game
-        self.main_history: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
+        self._main_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
             AbsolutePosition.NORTH: [],
             AbsolutePosition.SOUTH: [],
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
+        self.main_history: Deque[Tuple[Observation, Action, float]] = deque()
 
         # (state, action, reward) tuples for each player who got to bury the kitty
-        self.place_kitty_history: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
+        self._kitty_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
             AbsolutePosition.NORTH: [],
             AbsolutePosition.SOUTH: [],
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
+        self.kitty_history: Deque[Tuple[Observation, Action, float]] = deque()
 
         # (state, action, reward) tuples for each player who declared a trump suite
-        self.declaration_history: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
+        self._declaration_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
             AbsolutePosition.NORTH: [],
             AbsolutePosition.SOUTH: [],
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
+        self.declaration_history: Deque[Tuple[Observation, Action, float]] = deque()
 
         # (state, action, reward) tuples for each player who chaodied.
-        self.chaodi_history: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
+        self._chaodi_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
             AbsolutePosition.NORTH: [],
             AbsolutePosition.SOUTH: [],
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
+        self.chaodi_history: Deque[Tuple[Observation, Action, float]] = deque()
+
 
     def step(self):
         "Step the game and return whether the game is still ongoing."
@@ -57,16 +69,18 @@ class Simulation:
         
         if not self.game_engine.game_ended:
             observation = self.game_engine.get_observation(self.current_player)
-            
-            # Depending on the stage of the game, we use different agents to calculate an action
-            if self.game_engine.stage == Stage.declare_stage:
-                action = self.declare_agent.act(observation)
-            elif self.game_engine.stage == Stage.kitty_stage:
-                action = self.kitty_agent.act(observation)
-            elif self.game_engine.stage == Stage.chaodi_stage:
-                action = self.chaodi_agent.act(observation)
+            if observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST] and self.eval:
+                action = self.baseline.act(observation)
             else:
-                action = self.main_agent.act(observation)
+                # Depending on the stage of the game, we use different agents to calculate an action
+                if self.game_engine.stage == Stage.declare_stage:
+                    action = self.declare_agent.act(observation)
+                elif self.game_engine.stage == Stage.kitty_stage:
+                    action = self.kitty_agent.act(observation)
+                elif self.game_engine.stage == Stage.chaodi_stage:
+                    action = self.chaodi_agent.act(observation)
+                else:
+                    action = self.main_agent.act(observation)
             
             last_stage = self.game_engine.stage
             last_player = self.current_player
@@ -74,13 +88,13 @@ class Simulation:
             
             # Collect the observation, action and reward (rewards will be updated after the game finished)
             if last_stage == Stage.declare_stage:
-                self.declaration_history[last_player].append((observation, action, reward))
+                self._declaration_history_per_player[last_player].append((observation, action, reward))
             elif last_stage == Stage.kitty_stage:
-                self.place_kitty_history[last_player].append((observation, action, reward))
+                self._kitty_history_per_player[last_player].append((observation, action, reward))
             elif last_stage == Stage.chaodi_stage:
-                self.chaodi_history[last_player].append((observation, action, reward))
+                self._chaodi_history_per_player[last_player].append((observation, action, reward))
             else:
-                self.main_history[last_player].append((observation, action, reward))
+                self._main_history_per_player[last_player].append((observation, action, reward))
             
             # Helper function that determines if a player is on the defender side or the opponent side
             def is_defender(player: AbsolutePosition):
@@ -88,49 +102,77 @@ class Simulation:
             
             # If we reached the end of the game, propagate rewards for all states and actions.
             if self.game_engine.game_ended:
+                
+                # Determine who won and update the win count
+                if self.game_engine.opponent_points >= 80:
+                    if self.game_engine.dealer_position in [AbsolutePosition.NORTH, AbsolutePosition.SOUTH]:
+                        self.win_counts[1] += 1
+                    else:
+                        self.win_counts[0] += 1
+                else:
+                    if self.game_engine.dealer_position in [AbsolutePosition.NORTH, AbsolutePosition.SOUTH]:
+                        self.win_counts[0] += 1
+                    else:
+                        self.win_counts[1] += 1
+
+                logging.debug("Data for current round:")
+                logging.debug('Main history:', {k.value: len(v) for k, v in self._main_history_per_player.items()})
+                logging.debug('Declaration history:', {k.value: len(v) for k, v in self._declaration_history_per_player.items()})
+                logging.debug('Kitty history:', {k.value: len(v) for k, v in self._kitty_history_per_player.items()})
+                logging.debug('Chaodi history:', {k.value: len(v) for k, v in self._chaodi_history_per_player.items()})
+
                 for position in ['N', 'W', 'S', 'E']:
                     # For kitty action, the reward is not discounted because each move is equally important
-                    for i in range(len(self.place_kitty_history[position])):
-                        ob, ac, rw = self.place_kitty_history[position][i]
+                    for i in range(len(self._kitty_history_per_player[position])):
+                        ob, ac, rw = self._kitty_history_per_player[position][i]
                         if is_defender(ob.position):
-                            self.place_kitty_history[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
+                            self._kitty_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
                         else:
-                            self.place_kitty_history[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
-                    
+                            self._kitty_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
+                        self.kitty_history.append(self._kitty_history_per_player[position][i])
+                    self._kitty_history_per_player[position].clear()
+
                     # For declaration, the reward is also not discounted for the same reason
-                    for i in range(len(self.declaration_history[position])):
-                        ob, ac, rw = self.declaration_history[position][i]
+                    for i in range(len(self._declaration_history_per_player[position])):
+                        ob, ac, rw = self._declaration_history_per_player[position][i]
                         if is_defender(ob.position):
-                            self.declaration_history[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
+                            self._declaration_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
                         else:
-                            self.declaration_history[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
-                    
+                            self._declaration_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
+                        self.declaration_history.append(self._declaration_history_per_player[position][i])
+                    self._declaration_history_per_player[position].clear()
+
                     # For chaodi, the reward is not discounted also
-                    for i in range(len(self.chaodi_history[position])):
-                        ob, ac, rw = self.chaodi_history[position][i]
+                    for i in range(len(self._chaodi_history_per_player[position])):
+                        ob, ac, rw = self._chaodi_history_per_player[position][i]
                         if is_defender(ob.position):
-                            self.chaodi_history[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
+                            self._chaodi_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
                         else:
-                            self.chaodi_history[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
+                            self._chaodi_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
+                        self.chaodi_history.append(self._chaodi_history_per_player[position][i])
+                    self._chaodi_history_per_player[position].clear()
                         
                     # For main history, the reward is slightly discounted
-                    for i in range(len(self.main_history[position])):
-                        ob, ac, rw = self.main_history[position][i]
-                        discount_factor = self.discount ** (len(self.main_history[position]) - i - 1)
+                    for i in range(len(self._main_history_per_player[position])):
+                        ob, ac, rw = self._main_history_per_player[position][i]
+                        discount_factor = self.discount ** (len(self._main_history_per_player[position]) - i - 1)
                         if is_defender(ob.position):
-                            self.main_history[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward * discount_factor)
+                            self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward * discount_factor)
                         else:
-                            self.main_history[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward * discount_factor)
+                            self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward * discount_factor)
+                        self.main_history.append(self._main_history_per_player[position][i])
+                    self._main_history_per_player[position].clear()
 
             return True, action
         else:
-            print("Data collection status:")
-            print('Main history:', {k.value: len(v) for k, v in self.main_history.items()})
-            print('Declaration history:', {k.value: len(v) for k, v in self.declaration_history.items()})
-            print('Kitty history:', {k.value: len(v) for k, v in self.place_kitty_history.items()})
-            print('Chaodi history:', {k.value: len(v) for k, v in self.chaodi_history.items()})
             return False, None
 
     
     def reset(self):
         self.game_engine = Game()
+    
+    def backprop(self):
+        self.declare_agent.learn_from_samples(self.declaration_history)
+        self.kitty_agent.learn_from_samples(self.kitty_history)
+        self.chaodi_agent.learn_from_samples(self.chaodi_history)
+        self.main_agent.learn_from_samples(self.main_history)

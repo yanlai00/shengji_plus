@@ -1,5 +1,7 @@
+from asyncio.log import logger
+from collections import deque
 import sys
-from typing import List, Tuple
+from typing import Deque, List, Tuple
 import torch
 
 
@@ -12,10 +14,11 @@ from env.Observation import Observation
 from networks.Models import *
 
 class DeepAgent(SJAgent):
-    def __init__(self, name: str, model: nn.Module) -> None:
+    def __init__(self, name: str, model: nn.Module, batch_size=32) -> None:
         super().__init__(name)
 
         self.model = model
+        self.batch_size = batch_size
         self.optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, alpha=0.99)
         self.loss_fn = nn.MSELoss()
         self.train_loss_history: List[float] = []
@@ -23,17 +26,25 @@ class DeepAgent(SJAgent):
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         raise NotImplementedError
     
-    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
-        *args, rewards = self.prepare_batch_inputs(samples)
+    def learn_from_samples(self, samples: Deque[Tuple[Observation, Action, float]]):
+        step_count = 0
+        while len(samples) >= self.batch_size:
+            sample_batch = []
+            for _ in range(self.batch_size):
+                sample_batch.append(samples.popleft())
 
-        pred = self.model(*args)
-        loss = self.loss_fn(pred, rewards)
-        self.optimizer.zero_grad()
-        loss.backward()
-        # nn.utils.clip_grad_norm_(self.model.parameters(), 1000)
-        self.optimizer.step()
-        self.train_loss_history.append(loss.detach().item())
-
+            *args, rewards = self.prepare_batch_inputs(sample_batch)
+            
+            pred = self.model(*args)
+            loss = self.loss_fn(pred, rewards)
+            self.optimizer.zero_grad()
+            loss.backward()
+            # nn.utils.clip_grad_norm_(self.model.parameters(), 1000)
+            self.optimizer.step()
+            self.train_loss_history.append(loss.detach().item())
+            step_count += 1
+        if step_count > 0:
+            logger.info(f"{self.name} performed {step_count} optimization steps")
 class DeclareAgent(DeepAgent):
 
     def __init__(self, name: str, model: DeclarationModel) -> None:

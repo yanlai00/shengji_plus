@@ -32,7 +32,8 @@ class KittyModel(nn.Module):
         self.single_card_embedding = nn.Embedding(54, 32)
         self.fc1 = nn.Linear(172 + 32, 256)
         self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 1)
+        self.fc3 = nn.Linear(256, 256)
+        self.fc4 = nn.Linear(256, 1)
     
     def forward(self, x: torch.Tensor, card: torch.Tensor):
         """
@@ -46,6 +47,8 @@ class KittyModel(nn.Module):
         x = self.fc2(x)
         x = torch.relu(x)
         x = self.fc3(x)
+        x = torch.relu(x)
+        x = self.fc4(x)
         return x
 
 class ChaodiModel(nn.Module):
@@ -55,7 +58,8 @@ class ChaodiModel(nn.Module):
 
         self.fc1 = nn.Linear(178, 256)
         self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 1)
+        self.fc3 = nn.Linear(256, 256)
+        self.fc4 = nn.Linear(256, 1)
 
     def forward(self, x: torch.Tensor):
         """
@@ -66,6 +70,8 @@ class ChaodiModel(nn.Module):
         x = self.fc2(x)
         x = torch.relu(x)
         x = self.fc3(x)
+        x = torch.relu(x)
+        x = self.fc4(x)
         return x
 
 class MainModel(nn.Module):
