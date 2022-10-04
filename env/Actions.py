@@ -1,6 +1,6 @@
 # Defines all potential actions that a player can take during a game.
 from .CardSet import CardSet, MoveType
-from .utils import LETTER_RANK, ORDERING, Declaration, TrumpSuite
+from .utils import LETTER_RANK, ORDERING, ORDERING_INDEX, Declaration, TrumpSuite
 import torch
 
 class Action:
@@ -48,7 +48,7 @@ class PlaceKittyAction(Action):
     @property
     def tensor(self) -> torch.Tensor:
         "Shape: (1,)"
-        return torch.tensor(ORDERING.index(self.card))
+        return torch.tensor(ORDERING_INDEX[self.card])
         
 
 class ChaodiAction(Action):

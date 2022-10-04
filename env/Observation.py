@@ -32,7 +32,7 @@ class Observation:
         self.is_chaodi_turn = is_chaodi_turn
 
     def __repr__(self) -> str:
-        return f"Observation(hand={self.hand}, declaration={self.declaration}, dealer={self.dealer})"
+        return f"Observation({self.position.value}, hand={self.hand})"
 
     @property
     def points_tensor(self):

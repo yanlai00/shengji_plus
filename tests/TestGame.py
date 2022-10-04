@@ -38,12 +38,13 @@ class TestGame(unittest.TestCase):
         # print('North actions:', north_actions) # NORTH has double red jokers in this game at action 1.
         self.assertEqual(len(west_actions), 2)
         self.assertEqual(len(north_actions), 3)
-        game.run_action(west_actions[0], AbsolutePosition.WEST) # West declares something             
-        game.run_action(north_actions[0], AbsolutePosition.NORTH) # North overrides the declaration with double red joker
-        
-        # Last player draws a card
-        game.run_action(DontDeclareAction(), current_player)
-        # print('Current declaration:', game.declaration)
+        game.run_action(west_actions[0], AbsolutePosition.WEST) # West declares something
+        game.run_action(DontDeclareAction(), AbsolutePosition.SOUTH)
+        game.run_action(DontDeclareAction(), AbsolutePosition.EAST)
+        game.run_action(north_actions[0], AbsolutePosition.NORTH) # North overrides the declaration with double black joker
+        game.run_action(DontDeclareAction(), AbsolutePosition.WEST)
+        game.run_action(DontDeclareAction(), AbsolutePosition.SOUTH)
+        game.run_action(DontDeclareAction(), AbsolutePosition.EAST)
 
         self.assertEqual(sum([hand.size for hand in game.hands.values()]), 108) # all cards should be distributed
         self.assertEqual(game.hands[game.dealer_position].size, 33) # Dealer has 25 + 8 = 33 cards
@@ -85,12 +86,7 @@ class TestGame(unittest.TestCase):
         while sim.step()[0]: pass
 
         print(sim.game_engine.print_status())
-        
         breakpoint()
-        sim.declare_agent.learn_from_samples(sim.declaration_history)
-        sim.kitty_agent.learn_from_samples(sim.kitty_history)
-        sim.chaodi_agent.learn_from_samples(sim.chaodi_history)
-        sim.main_agent.learn_from_samples(sim.main_history)
 
 
 

@@ -38,6 +38,7 @@ class Game:
         self.dominant_rank = dominant_rank
         self.declarations: List[Declaration] = [] # Information about who declared the trump suite, what it is, and its level
         self.current_declaration_turn: AbsolutePosition = None # Once a player declares a trump suite, every other player takes turn to decide if they want to override.
+        self.initial_declaration_position: AbsolutePosition = None # Record the position of the first player that started the declaration round while drawing cards
         self.is_initial_game = dealer_position is None # Whether overriding the declaration lets the overrider becomes the dealer.
         self.dealer_position = dealer_position # Position of the dealer. At the start of game 1, the dealer is not determined yet.
         self.opponent_points = 0 # Multiples of 5
@@ -45,6 +46,7 @@ class Game:
         self.game_ended = False
         self.kitty_multiplier = None
 
+        self.points_per_round: List[int] = [] # Positive means defenders escaped points; negative means opponents scored points
         self.final_opponent_reward: float = None
         self.final_defender_reward: float = None
         
@@ -55,6 +57,8 @@ class Game:
 
         # Combo mode
         self.enable_combos = enable_combos
+
+        self.draw_order = []
 
     @property
     def dominant_suite(self):
@@ -69,6 +73,8 @@ class Game:
         first_player = self.dealer_position or AbsolutePosition.random()
         next_card = next(self.deck)
         self.hands[first_player].add_card(next_card)
+        self.draw_order.append((first_player, next_card))
+        logging.debug(f"Starting new game with dominant rank {self.dominant_rank}, first player is {first_player}, dealer is {self.dealer_position}")
         return first_player
 
     def get_observation(self, position: AbsolutePosition) -> Observation:
@@ -131,47 +137,52 @@ class Game:
     def run_action(self, action: Action, player_position: AbsolutePosition) -> Tuple[AbsolutePosition, float]:
         "Run an action on the game, and return the position of the player that needs to act next and the reward for the current action."
         if isinstance(action, DontDeclareAction):
-            if self.current_declaration_turn == player_position: # It's the current player's turn to declare if he wants to. But he chooses not, so the opportunity is passed on to the next player. But if the next player is the one who made the original declaration, then the declaration round is over and we continue drawing cards.
-                if player_position.next_position == self.dealer_position:
+            if self.current_declaration_turn == player_position: # It's the current player's turn to declare if he wants to. But he chooses not, so the opportunity is passed on to the next player. But if the next player is the one who made the original declaration, then the declaration is over and the dealer proceeds with swapping the kitty.
+                if player_position.next_position == self.initial_declaration_position:
                     self.current_declaration_turn = None
-                    return player_position.next_position, 0
+                    self.stage = Stage.kitty_stage
+                    if not self.dealer_position: self.dealer_position = AbsolutePosition.random()
+                    for remaining_card in self.deck:
+                        self.hands[self.dealer_position].add_card(remaining_card)
+                    return self.dealer_position, 0
                 else:
                     self.current_declaration_turn = self.current_declaration_turn.next_position
                     return self.current_declaration_turn, 0
+                    
             elif sum([h.size for h in self.hands.values()]) < 100: # Distribute the next card from the deck if less than 100 are distributed.
+                if self.hands[player_position.next_position].size >= 25:
+                    breakpoint()
                 assert self.hands[player_position.next_position].size < 25, "Current player already has 25 cards"
                 next_card = next(self.deck)
                 self.hands[player_position.next_position].add_card(next_card)
+                self.draw_order.append((player_position.next_position, next_card))
                 return player_position.next_position, 0
-            else: # Otherwise, all 100 cards are drawn from the deck.
-                self.stage = Stage.kitty_stage
-                if self.dealer_position is None:
-                    self.dealer_position = AbsolutePosition.random() # If no one wants to be the dealer, one player is randomly selected.
-                for remaining_card in self.deck:
-                    self.hands[self.dealer_position].add_card(remaining_card) # Last 8 cards go to the dealer.
-                return self.dealer_position, 0
+            else: # Otherwise, all 100 cards are drawn from the deck. Begin one final round of declarations.
+                self.initial_declaration_position = player_position
+                self.current_declaration_turn = player_position.next_position
+                return self.current_declaration_turn, 0
         
         elif isinstance(action, DeclareAction):
-            if self.dealer_position is None or self.is_initial_game:
-                self.dealer_position = player_position # Round 1, player becomes dealer (抢庄)
             assert not self.declarations or self.declarations[-1].level < action.declaration.level, "New trump suite declaration must have higher level than the existing one."
             assert self.hands[player_position].get_count(action.declaration.suite, self.dominant_rank) >= 1, "Invalid declaration"
             
+            if self.dealer_position is None or self.is_initial_game:
+                self.dealer_position = player_position # Round 1, player becomes dealer (抢庄)
             self.declarations.append(action.declaration)
             self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
             logging.info(f"Player {player_position} declared {action.declaration.suite} x {1 + int(action.declaration.level >= 1)}")
-            if action.declaration.level < 3:
-                self.current_declaration_turn = player_position.next_position
-                return self.current_declaration_turn, 0
-            elif sum([h.size for h in self.hands.values()]) == 100: # If double red joker is declared after all cards are drawn, we move straight to kitty phase -- no need to go around the table. 
-                self.stage = Stage.kitty_stage
-                for remaining_card in self.deck:
-                    self.hands[self.dealer_position].add_card(remaining_card)
-                return self.dealer_position, 0
-            else:
+            
+            if sum([h.size for h in self.hands.values()]) < 100:
+                # If 100 cards are not yet distributed, draw next card
                 next_card = next(self.deck)
                 self.hands[player_position.next_position].add_card(next_card)
+                self.draw_order.append((player_position.next_position, next_card))
                 return player_position.next_position, 0
+            else:
+                # Otherwise, other players take turns to see if they would like to redeclare.
+                self.initial_declaration_position = player_position
+                self.current_declaration_turn = player_position.next_position
+                return self.current_declaration_turn, 0
         
         elif isinstance(action, PlaceKittyAction):
             assert self.kitty.size < 8, "Kitty already has 8 cards"
@@ -191,11 +202,7 @@ class Game:
             else:
                 return player_position, 0 # Current player needs to first finish placing kitty
             
-            if not self.enable_chaodi:
-                self.stage = Stage.play_stage
-                return self.dealer_position, 0
-            elif self.declarations and self.declarations[-1].level == 3:
-                self.current_chaodi_turn = None
+            if not self.enable_chaodi or not self.declarations:
                 self.stage = Stage.play_stage
                 return self.dealer_position, 0
             else:
@@ -265,21 +272,26 @@ class Game:
                 winner_index = CardSet.round_winner(moves, self.dominant_suite, self.dominant_rank)
                 total_points = sum([c.total_points() for c in moves])
                 
-                dealer_index = 0
-                for i in range(winner_index):
-                    if lead_position == self.dealer_position: dealer_index = i
-                    lead_position = lead_position.next_position
-                
+                position_array = [lead_position, lead_position.next_position, lead_position.next_position.next_position, lead_position.last_position]
+                dealer_index = position_array.index(self.dealer_position)
+                new_leading_position = position_array[winner_index]
                 declarer_wins_round = winner_index == dealer_index or (winner_index + 2) % 4 == dealer_index
+                # breakpoint()
                 if declarer_wins_round:
                     self.defender_points += total_points
+                    self.points_per_round.append(total_points)
+                    logging.debug(f"Defenders escaped {total_points} points")
                 else:
                     self.opponent_points += total_points
+                    self.points_per_round.append(-total_points)
+                    logging.debug(f"Opponents scored {total_points} points")
+
                 
                 # Checks if game is finished
                 if self.hands[player_position].size == 0:
                     self.game_ended = True
                     logging.info(f"Game ends! Opponent current points: {self.opponent_points}")
+                    logging.info(f"Points per round: {self.points_per_round}")
                     if not declarer_wins_round:
                         multiplier = MoveType.Combo(moves[winner_index]).get_multiplier(self.dominant_suite, self.dominant_rank)
                         self.opponent_points += self.kitty.total_points() * multiplier
@@ -300,9 +312,9 @@ class Game:
                     
                     return None, 0 # Don't return rewards yet. They will be calculated in the end
                 else:
-                    logging.debug(f"Player {lead_position.value} wins round {len(self.round_history)}")
-                    self.round_history.append((lead_position, [])) # start new round
-                return lead_position, 0 # The next person to lead
+                    logging.debug(f"Player {new_leading_position.value} wins round {len(self.round_history)}")
+                    self.round_history.append((new_leading_position, [])) # start new round
+                return new_leading_position, 0
             else:
                 return player_position.next_position, 0
         

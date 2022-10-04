@@ -14,7 +14,7 @@ from env.Observation import Observation
 from networks.Models import *
 
 class DeepAgent(SJAgent):
-    def __init__(self, name: str, model: nn.Module, batch_size=32) -> None:
+    def __init__(self, name: str, model: nn.Module, batch_size=64) -> None:
         super().__init__(name)
 
         self.model = model
@@ -34,7 +34,6 @@ class DeepAgent(SJAgent):
                 sample_batch.append(samples.popleft())
 
             *args, rewards = self.prepare_batch_inputs(sample_batch)
-            
             pred = self.model(*args)
             loss = self.loss_fn(pred, rewards)
             self.optimizer.zero_grad()
@@ -45,10 +44,10 @@ class DeepAgent(SJAgent):
             step_count += 1
         if step_count > 0:
             logger.info(f"{self.name} performed {step_count} optimization steps")
-class DeclareAgent(DeepAgent):
 
-    def __init__(self, name: str, model: DeclarationModel) -> None:
-        super().__init__(name, model)
+class DeclareAgent(DeepAgent):
+    def __init__(self, name: str, model: DeclarationModel, batch_size=32) -> None:
+        super().__init__(name, model, batch_size)
         self.model: DeclarationModel
 
     def act(self, obs: Observation):
@@ -72,12 +71,13 @@ class DeclareAgent(DeepAgent):
             ])
             x_batch[i] = torch.cat([state_tensor, ac.tensor])
             gt_rewards[i] = rw
-        return x_batch, gt_rewards
+        device = next(self.model.parameters()).device
+        return x_batch.to(device), gt_rewards.to(device)
 
 
 class KittyAgent(DeepAgent):
-    def __init__(self, name: str, model: KittyModel) -> None:
-        super().__init__(name, model)
+    def __init__(self, name: str, model: KittyModel, batch_size=32) -> None:
+        super().__init__(name, model, batch_size)
         self.model: KittyModel
     
     def act(self, obs: Observation):
@@ -103,12 +103,13 @@ class KittyAgent(DeepAgent):
             state_batch[i] = state_tensor
             action_batch[i] = ac.tensor
             gt_rewards[i] = rw
-        return state_batch, action_batch, gt_rewards
+        device = next(self.model.parameters()).device
+        return state_batch.to(device), action_batch.to(device), gt_rewards.to(device)
 
 
 class ChaodiAgent(DeepAgent):
-    def __init__(self, name: str, model: ChaodiModel) -> None:
-        super().__init__(name, model)
+    def __init__(self, name: str, model: ChaodiModel, batch_size=32) -> None:
+        super().__init__(name, model, batch_size)
         self.model: ChaodiModel
 
     def act(self, obs: Observation):
@@ -132,15 +133,16 @@ class ChaodiAgent(DeepAgent):
             ])
             x_batch[i] = torch.cat([state_tensor, ac.tensor])
             gt_rewards[i] = rw
-        return x_batch, gt_rewards
+        device = next(self.model.parameters()).device
+        return x_batch.to(device), gt_rewards.to(device)
      
     
 class MainAgent(DeepAgent):
-    def __init__(self, name: str, model: MainModel) -> None:
-        super().__init__(name, model)
+    def __init__(self, name: str, model: MainModel, batch_size=32) -> None:
+        super().__init__(name, model, batch_size)
         self.model: MainModel
     
-    def act(self, obs: Observation):        
+    def act(self, obs: Observation):
         def reward(a: Action):
             x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(x_batch, history_batch)
@@ -167,6 +169,6 @@ class MainAgent(DeepAgent):
             x_batch[i] = torch.cat([state_tensor, ac.tensor])
             history_batch[i] = historical_moves
             gt_rewards[i] = rw
-        
-        return x_batch, history_batch, gt_rewards
+        device = next(self.model.parameters()).device
+        return x_batch.to(device), history_batch.to(device), gt_rewards.to(device)
 

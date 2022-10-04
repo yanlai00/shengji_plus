@@ -10,18 +10,24 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.98, enable_combos=False, eval=False) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, epsilon=0.02) -> None:
         "If eval = True, use random agents for East and West."
 
         self.main_agent = main_agent
         self.declare_agent = declare_agent
         self.kitty_agent = kitty_agent
         self.chaodi_agent = chaodi_agent
-        self.game_engine = Game(enable_chaodi=chaodi_agent is not None, enable_combos=enable_combos)
+        self.game_engine = Game(
+            dominant_rank=random.randint(2, 14),
+            dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
+            enable_chaodi=chaodi_agent is not None,
+            enable_combos=enable_combos)
         self.current_player = None
         self.discount = discount
         self.win_counts = [0, 0] # index 0 = wins of N and S; index 1 = wins of W and E
-        self.eval = eval
+        self.opposition_points = [[], []] # index 0 is the opposition points for N and S;
+        self.eval_mode = eval
+        self.epsilon = epsilon # Exploration
         self.baseline = RandomAgent('random')
 
         # (state, action, reward) tuples for each player during the main stage of the game
@@ -69,7 +75,7 @@ class Simulation:
         
         if not self.game_engine.game_ended:
             observation = self.game_engine.get_observation(self.current_player)
-            if observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST] and self.eval:
+            if self.eval_mode and observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST] or random.random() < self.epsilon:
                 action = self.baseline.act(observation)
             else:
                 # Depending on the stage of the game, we use different agents to calculate an action
@@ -114,54 +120,62 @@ class Simulation:
                         self.win_counts[0] += 1
                     else:
                         self.win_counts[1] += 1
+                
+                if self.game_engine.dealer_position in [AbsolutePosition.NORTH, AbsolutePosition.SOUTH]:
+                    self.opposition_points[1].append(self.game_engine.opponent_points)
+                else:
+                    self.opposition_points[0].append(self.game_engine.opponent_points)
 
                 logging.debug("Data for current round:")
-                logging.debug('Main history:', {k.value: len(v) for k, v in self._main_history_per_player.items()})
-                logging.debug('Declaration history:', {k.value: len(v) for k, v in self._declaration_history_per_player.items()})
-                logging.debug('Kitty history:', {k.value: len(v) for k, v in self._kitty_history_per_player.items()})
-                logging.debug('Chaodi history:', {k.value: len(v) for k, v in self._chaodi_history_per_player.items()})
+                logging.debug('Main history: ' + str({k.value: len(v) for k, v in self._main_history_per_player.items()}))
+                logging.debug('Declaration history: ' + str({k.value: len(v) for k, v in self._declaration_history_per_player.items()}))
+                logging.debug('Kitty history: ' + str({k.value: len(v) for k, v in self._kitty_history_per_player.items()}))
+                logging.debug('Chaodi history: ' + str({k.value: len(v) for k, v in self._chaodi_history_per_player.items()}))
 
-                for position in ['N', 'W', 'S', 'E']:
-                    # For kitty action, the reward is not discounted because each move is equally important
-                    for i in range(len(self._kitty_history_per_player[position])):
-                        ob, ac, rw = self._kitty_history_per_player[position][i]
-                        if is_defender(ob.position):
-                            self._kitty_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
-                        else:
-                            self._kitty_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
-                        self.kitty_history.append(self._kitty_history_per_player[position][i])
-                    self._kitty_history_per_player[position].clear()
+                if not self.eval_mode:
+                    for position in ['N', 'W', 'S', 'E']:
+                        # For kitty action, the reward is not discounted because each move is equally important
+                        for i in range(len(self._kitty_history_per_player[position])):
+                            ob, ac, rw = self._kitty_history_per_player[position][i]
+                            if is_defender(ob.position):
+                                self._kitty_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
+                            else:
+                                self._kitty_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
+                            self.kitty_history.append(self._kitty_history_per_player[position][i])
+                        self._kitty_history_per_player[position].clear()
 
-                    # For declaration, the reward is also not discounted for the same reason
-                    for i in range(len(self._declaration_history_per_player[position])):
-                        ob, ac, rw = self._declaration_history_per_player[position][i]
-                        if is_defender(ob.position):
-                            self._declaration_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
-                        else:
-                            self._declaration_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
-                        self.declaration_history.append(self._declaration_history_per_player[position][i])
-                    self._declaration_history_per_player[position].clear()
+                        # For declaration, the reward is also not discounted for the same reason
+                        for i in range(len(self._declaration_history_per_player[position])):
+                            ob, ac, rw = self._declaration_history_per_player[position][i]
+                            if is_defender(ob.position):
+                                self._declaration_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
+                            else:
+                                self._declaration_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
+                            self.declaration_history.append(self._declaration_history_per_player[position][i])
+                        self._declaration_history_per_player[position].clear()
 
-                    # For chaodi, the reward is not discounted also
-                    for i in range(len(self._chaodi_history_per_player[position])):
-                        ob, ac, rw = self._chaodi_history_per_player[position][i]
-                        if is_defender(ob.position):
-                            self._chaodi_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
-                        else:
-                            self._chaodi_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
-                        self.chaodi_history.append(self._chaodi_history_per_player[position][i])
-                    self._chaodi_history_per_player[position].clear()
-                        
-                    # For main history, the reward is slightly discounted
-                    for i in range(len(self._main_history_per_player[position])):
-                        ob, ac, rw = self._main_history_per_player[position][i]
-                        discount_factor = self.discount ** (len(self._main_history_per_player[position]) - i - 1)
-                        if is_defender(ob.position):
-                            self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward * discount_factor)
-                        else:
-                            self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward * discount_factor)
-                        self.main_history.append(self._main_history_per_player[position][i])
-                    self._main_history_per_player[position].clear()
+                        # For chaodi, the reward is not discounted also
+                        for i in range(len(self._chaodi_history_per_player[position])):
+                            ob, ac, rw = self._chaodi_history_per_player[position][i]
+                            if is_defender(ob.position):
+                                self._chaodi_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward)
+                            else:
+                                self._chaodi_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward)
+                            self.chaodi_history.append(self._chaodi_history_per_player[position][i])
+                        self._chaodi_history_per_player[position].clear()
+                            
+                        # For main history, the reward is slightly discounted
+                        for i in range(len(self._main_history_per_player[position])):
+                            ob, ac, rw = self._main_history_per_player[position][i]
+                            discount_factor = self.discount ** (len(self._main_history_per_player[position]) - i - 1)
+                            if is_defender(ob.position):
+                                rw += self.game_engine.points_per_round[i] / 120
+                                self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward * discount_factor)
+                            else:
+                                rw -= self.game_engine.points_per_round[i] / 80
+                                self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward * discount_factor)
+                            self.main_history.append(self._main_history_per_player[position][i])
+                        self._main_history_per_player[position].clear()
 
             return True, action
         else:
