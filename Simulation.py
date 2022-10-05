@@ -10,7 +10,7 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, epsilon=0.05) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None) -> None:
         "If eval = True, use random agents for East and West."
 
         self.main_agent = main_agent
@@ -27,8 +27,11 @@ class Simulation:
         self.win_counts = [0, 0] # index 0 = wins of N and S; index 1 = wins of W and E
         self.opposition_points = [[], []] # index 0 is the opposition points for N and S;
         self.eval_mode = eval
-        self.epsilon = epsilon # Exploration
-        self.baseline = RandomAgent('random')
+        self.random_agent = RandomAgent('random')
+        self.eval_main = eval_main
+        self.eval_declare = eval_declare
+        self.eval_kitty = eval_kitty
+        self.eval_chaodi = eval_chaodi
 
         # (state, action, reward) tuples for each player during the main stage of the game
         self._main_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
@@ -75,8 +78,15 @@ class Simulation:
         
         if not self.game_engine.game_ended:
             observation = self.game_engine.get_observation(self.current_player)
-            if self.eval_mode and observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST]:# or (not self.eval_mode and random.random() < self.epsilon):
-                action = self.baseline.act(observation)
+            if self.eval_mode and observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST]:
+                if self.game_engine.stage == Stage.declare_stage:
+                    action = (self.eval_declare or self.random_agent).act(observation)
+                elif self.game_engine.stage == Stage.kitty_stage:
+                    action = (self.eval_kitty or self.random_agent).act(observation)
+                elif self.game_engine.stage == Stage.chaodi_stage:
+                    action = (self.eval_chaodi or self.random_agent).act(observation)
+                else:
+                    action = (self.eval_main or self.random_agent).act(observation)
             else:
                 # Depending on the stage of the game, we use different agents to calculate an action
                 if self.game_engine.stage == Stage.declare_stage:
@@ -183,7 +193,11 @@ class Simulation:
 
     
     def reset(self):
-        self.game_engine = Game()
+        self.game_engine = Game(
+            dominant_rank=random.randint(2, 14),
+            dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
+            enable_chaodi=self.game_engine.enable_chaodi,
+            enable_combos=self.game_engine.enable_combos)
     
     def backprop(self):
         self.declare_agent.learn_from_samples(self.declaration_history)
