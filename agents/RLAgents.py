@@ -1,15 +1,17 @@
 from asyncio.log import logger
 from collections import deque
+import random
 import sys
 from typing import Deque, List, Tuple
 import torch
+import numpy as np
 
 
 from .Agent import SJAgent
 
 sys.path.append('.')
 from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceKittyAction
-from env.utils import Stage
+from env.utils import Stage, softmax
 from env.Observation import Observation
 from networks.Models import *
 
@@ -50,12 +52,15 @@ class DeclareAgent(DeepAgent):
         super().__init__(name, model, batch_size)
         self.model: DeclarationModel
 
-    def act(self, obs: Observation):
+    def act(self, obs: Observation, explore=False):
         def reward(a: Action):
             x_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(x_batch)
         
-        return max(obs.actions, key=reward)
+        if not explore:
+            return max(obs.actions, key=reward)
+        else:
+            return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         x_batch = torch.zeros((len(samples), 179))
@@ -80,12 +85,15 @@ class KittyAgent(DeepAgent):
         super().__init__(name, model, batch_size)
         self.model: KittyModel
     
-    def act(self, obs: Observation):
+    def act(self, obs: Observation, explore=False):
         def reward(a: Action):
             state_batch, action_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(state_batch, action_batch)
         
-        return max(obs.actions, key=reward)
+        if not explore:
+            return max(obs.actions, key=reward)
+        else:
+            return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         state_batch = torch.zeros((len(samples), 172))
@@ -112,12 +120,15 @@ class ChaodiAgent(DeepAgent):
         super().__init__(name, model, batch_size)
         self.model: ChaodiModel
 
-    def act(self, obs: Observation):
+    def act(self, obs: Observation, explore=False):
         def reward(a: Action):
             x_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(x_batch)
 
-        return max(obs.actions, key=reward)
+        if not explore:
+            return max(obs.actions, key=reward)
+        else:
+            return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         x_batch = torch.zeros((len(samples), 178))
@@ -142,12 +153,15 @@ class MainAgent(DeepAgent):
         super().__init__(name, model, batch_size)
         self.model: MainModel
     
-    def act(self, obs: Observation):
+    def act(self, obs: Observation, explore=False):
         def reward(a: Action):
             x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(x_batch, history_batch)
 
-        return max(obs.actions, key=reward)
+        if not explore:
+            return max(obs.actions, key=reward)
+        else:
+            return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         x_batch = torch.zeros((len(samples), 1196))

@@ -1,6 +1,7 @@
 import logging
 import pickle
 import random
+import shutil
 import torch, os
 from Simulation import Simulation
 from agents.RLAgents import *
@@ -54,6 +55,16 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int):
         pickle.dump(stats, f)
 
     iterations = 0
+
+    try:
+        with open(f'{model_folder}/state.pkl', mode='rb') as f:
+            state = pickle.load(f)
+            iterations = state['iterations']
+            print(f"Using checkpoint at iteration {iterations}")
+    except:
+        print("Starting new training session")
+        shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
+
     while True:
         print(f"Training games {iterations * games}-{(iterations+1) * games}...")
         for i in tqdm.tqdm(range(games)):
@@ -92,11 +103,12 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int):
         stats.append({
             "iterations": iterations * games,
             "win_counts": eval_sim.win_counts[0] / sum(eval_sim.win_counts),
-            "avg_points": [np.mean(train_sim.opposition_points[0]), np.mean(train_sim.opposition_points[1])]
+            "avg_points": [np.mean(eval_sim.opposition_points[0]), np.mean(eval_sim.opposition_points[1])]
         })
         with open(f'{model_folder}/stats.pkl', mode='w+b') as f:
             pickle.dump(stats, f)
-    
+        with open(f'{model_folder}/state.pkl', mode='w+b') as f:
+            pickle.dump({ 'iterations': iterations }, f)
 
 
 if __name__ == '__main__':

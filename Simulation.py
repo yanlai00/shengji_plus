@@ -10,7 +10,7 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, epsilon=0.02) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, epsilon=0.05) -> None:
         "If eval = True, use random agents for East and West."
 
         self.main_agent = main_agent
@@ -75,18 +75,18 @@ class Simulation:
         
         if not self.game_engine.game_ended:
             observation = self.game_engine.get_observation(self.current_player)
-            if self.eval_mode and observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST] or random.random() < self.epsilon:
+            if self.eval_mode and observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST]:# or (not self.eval_mode and random.random() < self.epsilon):
                 action = self.baseline.act(observation)
             else:
                 # Depending on the stage of the game, we use different agents to calculate an action
                 if self.game_engine.stage == Stage.declare_stage:
-                    action = self.declare_agent.act(observation)
+                    action = self.declare_agent.act(observation, explore=not self.eval_mode)
                 elif self.game_engine.stage == Stage.kitty_stage:
-                    action = self.kitty_agent.act(observation)
+                    action = self.kitty_agent.act(observation, explore=not self.eval_mode)
                 elif self.game_engine.stage == Stage.chaodi_stage:
-                    action = self.chaodi_agent.act(observation)
+                    action = self.chaodi_agent.act(observation, explore=not self.eval_mode)
                 else:
-                    action = self.main_agent.act(observation)
+                    action = self.main_agent.act(observation, explore=not self.eval_mode)
             
             last_stage = self.game_engine.stage
             last_player = self.current_player

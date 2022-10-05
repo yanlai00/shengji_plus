@@ -3,6 +3,7 @@
 import random
 from enum import Enum
 import torch
+import numpy as np
 
 ORDERING = ['A♦', 'K♦', 'Q♦', 'J♦', '10♦', '9♦', '8♦', '7♦', '6♦', '5♦', '4♦', '3♦', '2♦', 'A♣', 'K♣', 'Q♣', 'J♣', '10♣', '9♣', '8♣', '7♣', '6♣', '5♣', '4♣', '3♣', '2♣', 'A♥', 'K♥', 'Q♥', 'J♥', '10♥', '9♥', '8♥', '7♥', '6♥', '5♥', '4♥', '3♥', '2♥', 'A♠', 'K♠', 'Q♠', 'J♠', '10♠', '9♠', '8♠', '7♠', '6♠', '5♠', '4♠', '3♠', '2♠', 'XJ', 'DJ']
 ORDERING_INDEX = {k:i for i, k in enumerate(ORDERING)}
@@ -170,3 +171,6 @@ def get_rank(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
             return rank + 1 # shift the rank of cards smaller than dominant rank by 1 to support tractors across the dominant rank
         else:
             return rank
+
+def softmax(arr):
+    return np.exp(arr) / np.sum(np.exp(arr))
