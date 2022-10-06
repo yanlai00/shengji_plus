@@ -186,10 +186,18 @@ class Simulation:
                                 rw += self.game_engine.final_defender_reward if is_defender(ob.position) else self.game_engine.final_opponent_reward
 
                             if is_defender(ob.position):
-                                rw += self.game_engine.points_per_round[i] / 120
+                                if self.game_engine.points_per_round[i] >= 0:
+                                    # rw += self.game_engine.points_per_round[i] / 120 # Defenders are only moderately happy when escaping points
+                                    rw += self.game_engine.points_per_round[i] / 80
+                                else:
+                                    rw += self.game_engine.points_per_round[i] / 80 # Defenders should care a lot about losing points
                                 self._main_history_per_player[position][i] = (ob, ac, rw)
                             else:
-                                rw -= self.game_engine.points_per_round[i] / 80
+                                if self.game_engine.points_per_round[i] <= 0:
+                                    rw -= self.game_engine.points_per_round[i] / 80 # Opponents are happier when earning points
+                                else:
+                                    # rw -= self.game_engine.points_per_round[i] / 120 # Opponents are not so sad when they lose points
+                                    rw -= self.game_engine.points_per_round[i] / 80
                                 self._main_history_per_player[position][i] = (ob, ac, rw)
                             self.main_history.append(self._main_history_per_player[position][i])
                         self._main_history_per_player[position].clear()
