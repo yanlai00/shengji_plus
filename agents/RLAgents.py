@@ -21,7 +21,8 @@ class DeepAgent(SJAgent):
 
         self.model = model
         self.batch_size = batch_size
-        self.optimizer = torch.optim.RMSprop(model.parameters(), lr=0.0002, alpha=0.99)
+        self.optimizer = torch.optim.RMSprop(model.parameters(), lr=0.0001, alpha=0.99)
+        # self.optimizer = torch.optim.Adam(model.parameters(), lr=0.0002)
         self.loss_fn = nn.MSELoss()
         self.train_loss_history: List[float] = []
     
@@ -166,7 +167,7 @@ class MainAgent(DeepAgent):
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         x_batch = torch.zeros((len(samples), 1196))
-        history_batch = torch.zeros((len(samples), 15, 436)) # Store up to last 15 rounds of history
+        history_batch = torch.zeros((len(samples), 20, 436)) # Store up to last 15 rounds of history
         gt_rewards = torch.zeros((len(samples), 1))
         for i, (obs, ac, rw) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_tensor

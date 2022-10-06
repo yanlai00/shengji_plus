@@ -117,7 +117,7 @@ class Observation:
     @property
     def historical_moves_tensor(self):
         "Returns two tensor of shape (10, 436), (328,) representing the historical rounds of the current game."
-        history_tensor = torch.zeros((min(16, len(self.round_history)), 4 + 4 * 108))
+        history_tensor = torch.zeros((min(20, len(self.round_history)), 4 + 4 * 108))
         position_order = [RelativePosition.SELF, RelativePosition.RIGHT, RelativePosition.OPPOSITE, RelativePosition.LEFT]
         for i, (pos, round) in enumerate(self.round_history[-self.historical_rounds - 1:]):
             current_player_index = position_order.index(pos)
@@ -127,8 +127,8 @@ class Observation:
                 current_player_index = (current_player_index + 1) % 4
         
         padded_history = torch.vstack([
-            torch.zeros((16 - history_tensor.shape[0], 436)),
-            history_tensor[:-1]
+            torch.zeros((20 - history_tensor.shape[0], 436)),
+            history_tensor
         ])
         return padded_history, torch.cat([history_tensor[-1][:4], history_tensor[-1][112:]])
 

@@ -29,8 +29,8 @@ class KittyModel(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-        self.single_card_embedding = nn.Embedding(54, 32)
-        self.fc1 = nn.Linear(172 + 32, 256)
+        self.single_card_embedding = nn.Embedding(54, 54)
+        self.fc1 = nn.Linear(172 + 54, 256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 256)
         self.fc4 = nn.Linear(256, 1)
@@ -91,8 +91,8 @@ class MainModel(nn.Module):
         self.lstm = nn.LSTM(436, 256, batch_first=True)
         self.fc1 = nn.Linear(1196 + 256, 768)
         self.fc2 = nn.Linear(768, 512)
-        self.fc3 = nn.Linear(512, 256)
-        self.fc4 = nn.Linear(256, 1)
+        self.fc3 = nn.Linear(512, 1)
+        # self.fc4 = nn.Linear(256, 1)
     
     def forward(self, x: torch.Tensor, history: torch.Tensor):
         if history.shape[1] > 0:
@@ -105,6 +105,6 @@ class MainModel(nn.Module):
         x = self.fc2(x)
         x = torch.relu(x)
         x = self.fc3(x)
-        x = torch.relu(x)
-        x = self.fc4(x)
+        # x = torch.relu(x)
+        # x = self.fc4(x)
         return x
