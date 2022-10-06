@@ -10,7 +10,7 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98) -> None:
         "If eval = True, use random agents for East and West."
 
         self.main_agent = main_agent
@@ -32,6 +32,7 @@ class Simulation:
         self.eval_declare = eval_declare
         self.eval_kitty = eval_kitty
         self.eval_chaodi = eval_chaodi
+        self.epsilon = epsilon
 
         # (state, action, reward) tuples for each player during the main stage of the game
         self._main_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
@@ -40,7 +41,7 @@ class Simulation:
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
-        self.main_history: Deque[Tuple[Observation, Action, float]] = deque()
+        self.main_history: List[Tuple[Observation, Action, float]] = []
 
         # (state, action, reward) tuples for each player who got to bury the kitty
         self._kitty_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
@@ -49,7 +50,7 @@ class Simulation:
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
-        self.kitty_history: Deque[Tuple[Observation, Action, float]] = deque()
+        self.kitty_history: List[Tuple[Observation, Action, float]] = []
 
         # (state, action, reward) tuples for each player who declared a trump suite
         self._declaration_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
@@ -58,7 +59,7 @@ class Simulation:
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
-        self.declaration_history: Deque[Tuple[Observation, Action, float]] = deque()
+        self.declaration_history: List[Tuple[Observation, Action, float]] = []
 
         # (state, action, reward) tuples for each player who chaodied.
         self._chaodi_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
@@ -67,7 +68,7 @@ class Simulation:
             AbsolutePosition.WEST: [],
             AbsolutePosition.EAST: []
         }
-        self.chaodi_history: Deque[Tuple[Observation, Action, float]] = deque()
+        self.chaodi_history: List[Tuple[Observation, Action, float]] = []
 
 
     def step(self):
@@ -90,13 +91,13 @@ class Simulation:
             else:
                 # Depending on the stage of the game, we use different agents to calculate an action
                 if self.game_engine.stage == Stage.declare_stage:
-                    action = self.declare_agent.act(observation, explore=not self.eval_mode)
+                    action = self.declare_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
                 elif self.game_engine.stage == Stage.kitty_stage:
-                    action = self.kitty_agent.act(observation, explore=not self.eval_mode)
+                    action = self.kitty_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
                 elif self.game_engine.stage == Stage.chaodi_stage:
-                    action = self.chaodi_agent.act(observation, explore=not self.eval_mode)
+                    action = self.chaodi_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
                 else:
-                    action = self.main_agent.act(observation, explore=not self.eval_mode)
+                    action = self.main_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
             
             last_stage = self.game_engine.stage
             last_player = self.current_player
@@ -175,17 +176,25 @@ class Simulation:
                         self._chaodi_history_per_player[position].clear()
                             
                         # For main history, the reward is slightly discounted
-                        for i in range(len(self._main_history_per_player[position])):
+                        for i in reversed(range(len(self._main_history_per_player[position]))):
                             ob, ac, rw = self._main_history_per_player[position][i]
-                            discount_factor = self.discount ** (len(self._main_history_per_player[position]) - i - 1)
+
+                            # Add reward from next time step if there is one, otherwise assign final reward
+                            if i + 1 < len(self._main_history_per_player[position]):
+                                rw += self.discount * self._main_history_per_player[position][i+1][2]
+                            else:
+                                rw += self.game_engine.final_defender_reward if is_defender(ob.position) else self.game_engine.final_opponent_reward
+
                             if is_defender(ob.position):
                                 rw += self.game_engine.points_per_round[i] / 120
-                                self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_defender_reward * discount_factor)
+                                self._main_history_per_player[position][i] = (ob, ac, rw)
                             else:
                                 rw -= self.game_engine.points_per_round[i] / 80
-                                self._main_history_per_player[position][i] = (ob, ac, rw + self.game_engine.final_opponent_reward * discount_factor)
+                                self._main_history_per_player[position][i] = (ob, ac, rw)
                             self.main_history.append(self._main_history_per_player[position][i])
                         self._main_history_per_player[position].clear()
+                    # for history in [self.main_history, self.declaration_history, self.kitty_history, self.chaodi_history]:
+                    #     random.shuffle(history)
 
             return True, action
         else:
@@ -198,6 +207,10 @@ class Simulation:
             dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
             enable_chaodi=self.game_engine.enable_chaodi,
             enable_combos=self.game_engine.enable_combos)
+        self.main_history.clear()
+        self.declaration_history.clear()
+        self.chaodi_history.clear()
+        self.kitty_history.clear()
     
     def backprop(self):
         self.declare_agent.learn_from_samples(self.declaration_history)

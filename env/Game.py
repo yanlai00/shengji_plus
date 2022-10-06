@@ -53,6 +53,7 @@ class Game:
         # Chaodi mode
         self.enable_chaodi = enable_chaodi
         self.current_chaodi_turn: AbsolutePosition = None
+        self.initial_chaodi_position: AbsolutePosition = None
         self.chaodi_times = [0, 0, 0, 0] # In the order N, W, S, E
 
         # Combo mode
@@ -138,6 +139,7 @@ class Game:
         "Run an action on the game, and return the position of the player that needs to act next and the reward for the current action."
         if isinstance(action, DontDeclareAction):
             if self.current_declaration_turn == player_position: # It's the current player's turn to declare if he wants to. But he chooses not, so the opportunity is passed on to the next player. But if the next player is the one who made the original declaration, then the declaration is over and the dealer proceeds with swapping the kitty.
+                logging.debug(f"Player {player_position.value} chose not to declare")
                 if player_position.next_position == self.initial_declaration_position:
                     self.current_declaration_turn = None
                     self.stage = Stage.kitty_stage
@@ -158,7 +160,7 @@ class Game:
                 self.draw_order.append((player_position.next_position, next_card))
                 return player_position.next_position, 0
             else: # Otherwise, all 100 cards are drawn from the deck. Begin one final round of declarations.
-                self.initial_declaration_position = player_position
+                self.initial_declaration_position = player_position.next_position
                 self.current_declaration_turn = player_position.next_position
                 return self.current_declaration_turn, 0
         
@@ -207,13 +209,14 @@ class Game:
                 return self.dealer_position, 0
             else:
                 self.stage = Stage.chaodi_stage
+                self.initial_chaodi_position = player_position
                 self.current_chaodi_turn = player_position.next_position
                 return player_position.next_position, 0
         
         elif isinstance(action, DontChaodiAction):
             logging.debug(f"Player {player_position} chose not to chaodi")
             # Note: chaodi is only an option if no one declares.
-            if self.current_chaodi_turn.next_position == self.declarations[-1].absolute_position: # We went around the table and no one chaodied.
+            if self.current_chaodi_turn.next_position == self.initial_chaodi_position: # We went around the table and no one chaodied.
                 self.current_chaodi_turn = None
                 self.stage = Stage.play_stage
                 return self.dealer_position, 0
@@ -291,7 +294,7 @@ class Game:
                 if self.hands[player_position].size == 0:
                     self.game_ended = True
                     logging.info(f"Game ends! Opponent current points: {self.opponent_points}")
-                    logging.info(f"Points per round: {self.points_per_round}")
+                    logging.debug(f"Points per round: {self.points_per_round}")
                     if not declarer_wins_round:
                         multiplier = MoveType.Combo(moves[winner_index]).get_multiplier(self.dominant_suite, self.dominant_rank)
                         self.opponent_points += self.kitty.total_points() * multiplier

@@ -2,6 +2,8 @@ import logging
 import pickle
 import random
 import shutil
+from torch.multiprocessing import Process, Lock, Queue
+from time import sleep
 import torch, os
 from Simulation import Simulation
 from agents.RLAgents import *
@@ -9,10 +11,49 @@ import argparse
 import tqdm
 import numpy as np
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, verbose=False):
+ctx = torch.multiprocessing.get_context('spawn')
+global_main_queue = ctx.Queue(maxsize=10000)
+global_chaodi_queue = ctx.Queue(maxsize=10000)
+global_declare_queue = ctx.Queue(maxsize=10000)
+global_kitty_queue = ctx.Queue(maxsize=10000)
+actor_processes = []
+
+# Parallelized data sampling
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos):
+    train_sim = Simulation(
+        main_agent=main_agent,
+        declare_agent=declare_agent,
+        kitty_agent=kitty_agent,
+        chaodi_agent=chaodi_agent,
+        enable_combos=combos,
+        eval_main=eval_main,
+        eval_declare=eval_declare,
+        eval_kitty=eval_kitty,
+        eval_chaodi=eval_chaodi,
+        discount=discount,
+        epsilon=0.2
+    )
+    while True:
+        local_main, local_declare, local_kitty, local_chaodi = [], [], [], []
+        for i in range(10):
+            with torch.no_grad():
+                while train_sim.step()[0]: pass
+                local_main.extend(train_sim.main_history[:])
+                local_declare.extend(train_sim.declaration_history[:])
+                local_chaodi.extend(train_sim.chaodi_history[:])
+                local_kitty.extend(train_sim.kitty_history[:])
+            
+            train_sim.reset()
+            train_sim.epsilon = max(0.01, train_sim.epsilon / decay_factor)
+        global_main_queue.put(local_main)
+        global_declare_queue.put(local_declare)
+        global_chaodi_queue.put(local_chaodi)
+        global_kitty_queue.put(local_kitty)
+
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
-    random.seed(2)
+    random.seed(random_seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
     declare_model = DeclarationModel().to(device)
@@ -38,6 +79,11 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         main_model.load_state_dict(torch.load(f'{model_folder}/main.pt', map_location=device), strict=False)
         print("Using loaded model for main game")
     main_agent = MainAgent('main', main_model)
+    
+    declare_model.share_memory()
+    kitty_model.share_memory()
+    chaodi_model.share_memory()
+    main_model.share_memory()
 
     eval_main, eval_kitty, eval_chaodi, eval_declare = None, None, None, None
     if compare:
@@ -60,20 +106,6 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         eval_chaodi_model.load_state_dict(torch.load(f'{compare}/chaodi.pt', map_location=device), strict=False)
         print(f"Using chaodi model in {compare} for comparison")
         eval_chaodi = ChaodiAgent('chaodi', eval_chaodi_model)
-    
-    train_sim = Simulation(
-        main_agent=main_agent,
-        declare_agent=declare_agent,
-        kitty_agent=kitty_agent,
-        chaodi_agent=chaodi_agent,
-        enable_combos=False,
-        eval_main=eval_main,
-        eval_declare=eval_declare,
-        eval_kitty=eval_kitty,
-        eval_chaodi=eval_chaodi,
-        discount=discount,
-        eval=eval_only,
-    )
 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -94,52 +126,77 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     except:
         print("Starting new training session")
         shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
-
+    
+    if not eval_only:
+        for i in range(3):
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos))
+            actor.start()
+            actor_processes.append(actor)
+            
+            print(f"Spawned process {i}")
+    
+  
     while True:
         if not eval_only:
-            print(f"Training games {iterations * games}-{(iterations+1) * games}...")
-        for i in tqdm.tqdm(range(games)):
-            with torch.no_grad():
-                while train_sim.step()[0]: pass
-            if not eval_only:
-                if (i+1) % 5 == 0:
-                    train_sim.backprop()
-                    for agent in (declare_agent, kitty_agent, chaodi_agent, main_agent):
-                        torch.save(agent.model.state_dict(), f'{model_folder}/{agent.name}.pt')
-            train_sim.reset()
+            print(f"Training iterations {iterations * games}-{(iterations+1) * games}...")
+            for _ in tqdm.tqdm(range(0, games, 10)):
+                # print('wait', global_main_queue.qsize(), global_declare_queue.qsize(), global_kitty_queue.qsize(), global_chaodi_queue.qsize())
+                declare_batch = global_declare_queue.get()
+                kitty_batch = global_kitty_queue.get()
+                main_batch = global_main_queue.get()
+                chaodi_batch = global_chaodi_queue.get()
+                declare_agent.learn_from_samples(declare_batch)
+                kitty_agent.learn_from_samples(kitty_batch)
+                chaodi_agent.learn_from_samples(chaodi_batch)
+                main_agent.learn_from_samples(main_batch)
+            for agent in (declare_agent, kitty_agent, chaodi_agent, main_agent):
+                torch.save(agent.model.state_dict(), f'{model_folder}/{agent.name}.pt')
+            print('main loss:', np.mean(main_agent.train_loss_history), 'declare loss:', np.mean(declare_agent.train_loss_history), 'kitty loss:', np.mean(kitty_agent.train_loss_history), 'chaodi loss:', np.mean(chaodi_agent.train_loss_history))
+            main_agent.train_loss_history.clear()
+            declare_agent.train_loss_history.clear()
+            kitty_agent.train_loss_history.clear()
+            chaodi_agent.train_loss_history.clear()
 
-        if eval_only:
-            print('Win counts:', train_sim.win_counts)
-            print("Average opposition points:", np.mean(train_sim.opposition_points[0]), np.mean(train_sim.opposition_points[1]))
-            break
+        # for i in tqdm.tqdm(range(games)):
+        #     with torch.no_grad():
+        #         while train_sim.step()[0]: pass
+        #     if not eval_only:
+        #         if (i+1) % 5 == 0:
+        #             train_sim.backprop()
+        #             for agent in (declare_agent, kitty_agent, chaodi_agent, main_agent):
+        #                 torch.save(agent.model.state_dict(), f'{model_folder}/{agent.name}.pt')
+        #     train_sim.reset()
         
-        if not eval_only:
-            print("Evaluating model performance...")
-            eval_sim = Simulation(
-                main_agent=main_agent,
-                declare_agent=declare_agent,
-                kitty_agent=kitty_agent,
-                chaodi_agent=chaodi_agent,
-                enable_combos=False,
-                eval=True
-            )
-            for _ in tqdm.tqdm(range(eval_size)):
-                with torch.no_grad():
-                    while eval_sim.step()[0]: pass
-                eval_sim.reset()
-            print('Win counts:', eval_sim.win_counts)
-            print("Average opposition points:", np.mean(eval_sim.opposition_points[0]), np.mean(eval_sim.opposition_points[1]))
+        print("Evaluating model performance...")
+        eval_sim = Simulation(
+            main_agent=main_agent,
+            declare_agent=declare_agent,
+            kitty_agent=kitty_agent,
+            chaodi_agent=chaodi_agent,
+            enable_combos=combos,
+            eval=True
+        )
+        for _ in tqdm.tqdm(range(eval_size)):
+            with torch.no_grad():
+                while eval_sim.step()[0]: pass
+            eval_sim.reset()
+        print('Win counts:', eval_sim.win_counts)
+        print("Average opposition points:", np.mean(eval_sim.opposition_points[0]), np.mean(eval_sim.opposition_points[1]))
         
         iterations += 1
-        stats.append({
-            "iterations": iterations * games,
-            "win_counts": eval_sim.win_counts[0] / sum(eval_sim.win_counts),
-            "avg_points": [np.mean(eval_sim.opposition_points[0]), np.mean(eval_sim.opposition_points[1])]
-        })
-        with open(f'{model_folder}/stats.pkl', mode='w+b') as f:
-            pickle.dump(stats, f)
-        with open(f'{model_folder}/state.pkl', mode='w+b') as f:
-            pickle.dump({ 'iterations': iterations }, f)
+
+        if not eval_only:
+            stats.append({
+                "iterations": iterations * games,
+                "win_counts": eval_sim.win_counts[0] / sum(eval_sim.win_counts),
+                "avg_points": [np.mean(eval_sim.opposition_points[0]), np.mean(eval_sim.opposition_points[1])]
+            })
+            with open(f'{model_folder}/stats.pkl', mode='w+b') as f:
+                pickle.dump(stats, f)
+            with open(f'{model_folder}/state.pkl', mode='w+b') as f:
+                pickle.dump({ 'iterations': iterations }, f)
+        else:
+            break
 
 
 if __name__ == '__main__':
@@ -150,6 +207,10 @@ if __name__ == '__main__':
     parser.add_argument('--model-folder', type=str, default='pretrained')
     parser.add_argument('--compare', type=str, default='')
     parser.add_argument('--verbose', action='store_true')
-    parser.add_argument('--discount', type=float, default=0.99)
+    parser.add_argument('--discount', type=float, default=0.95)
+    parser.add_argument('--decay-factor', type=float, default=1.2)
+    parser.add_argument('--random-seed', type=int, default=1)
+    parser.add_argument('--enable-combos', action='store_true')
+    # parser.add_argument('--epsilon', type=float, default=0.02)
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.verbose)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed)
