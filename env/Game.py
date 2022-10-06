@@ -298,7 +298,10 @@ class Game:
                     if not declarer_wins_round:
                         multiplier = MoveType.Combo(moves[winner_index]).get_multiplier(self.dominant_suite, self.dominant_rank)
                         self.opponent_points += self.kitty.total_points() * multiplier
+                        self.points_per_round[-1] -= self.kitty.total_points() * multiplier # Opponents earned points from kitty
                         logging.info(f"Opponents received {self.kitty.total_points()} x {multiplier} from kitty. Final points: {self.opponent_points}")
+                    else:
+                        self.points_per_round[-1] += self.kitty.total_points() * 2 # The points which the defenders prevented from being stolen
                     
                     opponent_reward = 0
                     if self.opponent_points >= 80:
