@@ -19,13 +19,14 @@ global_kitty_queue = ctx.Queue(maxsize=10000)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos):
     train_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
         kitty_agent=kitty_agent,
         chaodi_agent=chaodi_agent,
         enable_combos=combos,
+        discount=discount,
         epsilon=0.2
     )
     while True:
@@ -63,7 +64,12 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
             while eval_sim.step()[0]: pass
         opponent_index = int(eval_sim.game_engine.dealer_position in ['N', 'S'])
         opponents_won = eval_sim.game_engine.opponent_points >= 80
-        eval_results_queue.put((int(opponents_won) if opponent_index == 1 else (1 - opponents_won), opponent_index, eval_sim.game_engine.opponent_points))
+        win_index = int(opponents_won) if opponent_index == 1 else (1 - opponents_won)
+        eval_results_queue.put((
+            win_index,
+            opponent_index,
+            eval_sim.game_engine.opponent_points,
+            abs(eval_sim.game_engine.final_defender_reward)))
         eval_sim.reset()
     exit(0)
 
@@ -142,6 +148,10 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         with open(f'{model_folder}/state.pkl', mode='rb') as f:
             state = pickle.load(f)
             iterations = state['iterations']
+            main_agent.optimizer.load_state_dict(state['main_optim_state'])
+            kitty_agent.optimizer.load_state_dict(state['kitty_optim_state'])
+            declare_agent.optimizer.load_state_dict(state['declare_optim_state'])
+            chaodi_agent.optimizer.load_state_dict(state['chaodi_optim_state'])
             print(f"Using checkpoint at iteration {iterations}")
         with open(f'{model_folder}/stats.pkl', mode='rb') as f:
             stats = pickle.load(f)
@@ -151,8 +161,8 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
     
     if not eval_only:
-        for i in range(4):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos))
+        for i in range(6):
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos))
             actor.start()
             actor_processes.append(actor)
             
@@ -203,21 +213,24 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         #     with torch.no_grad():
         #         while eval_sim.step()[0]: pass
         #     eval_sim.reset()
-        eval_size = eval_size // 4 * 4 # Must be multiple of 4
+        eval_count = 5
+        eval_size = eval_size // eval_count * eval_count # Must be multiple of 4
         win_counts = [0, 0] # Defenders, opponents
+        level_counts = [0, 0]
         opposition_points = [[], []]
         eval_queue = ctx.Queue()
         eval_actors = []
-        for i in range(4):
-            actor = ctx.Process(target=evaluator, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, eval_size // 4, eval_queue))
+        for i in range(eval_count):
+            actor = ctx.Process(target=evaluator, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, eval_size // eval_count, eval_queue))
             actor.start()
             eval_actors.append(actor)
         
 
         with tqdm.tqdm(total=eval_size) as progress_bar:
             for i in range(eval_size):
-                win_index, opponent_index, points = eval_queue.get()
+                win_index, opponent_index, points, levels = eval_queue.get()
                 win_counts[win_index] += 1
+                level_counts[win_index] += levels
                 opposition_points[opponent_index].append(points)
                 progress_bar.update(1)
                 
@@ -225,7 +238,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         for a in eval_actors:
             a.join()
 
-        print('Win counts:', win_counts)
+        print('Win counts:', win_counts, 'level counts:', level_counts)
         print("Average opposition points:", np.mean(opposition_points[0]), np.mean(opposition_points[1]))
         
         iterations += 1
@@ -234,6 +247,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             stats.append({
                 "iterations": iterations * games,
                 "win_counts": win_counts[0] / sum(win_counts),
+                "level_counts": level_counts[0] / sum(level_counts),
                 "avg_points": [np.mean(opposition_points[0]), np.mean(opposition_points[1])]
             })
             with open(f'{model_folder}/stats.pkl', mode='w+b') as f:

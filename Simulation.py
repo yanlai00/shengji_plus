@@ -9,6 +9,8 @@ from env.Game import Game, Stage
 from env.Actions import *
 from collections import deque
 
+FIXED_DECK = CardSet.new_deck()[1]
+
 class Simulation:
     def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98) -> None:
         "If eval = True, use random agents for East and West."
@@ -22,9 +24,11 @@ class Simulation:
             dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
             enable_chaodi=chaodi_agent is not None,
             enable_combos=enable_combos)
+
         self.current_player = None
         self.discount = discount
         self.win_counts = [0, 0] # index 0 = wins of N and S; index 1 = wins of W and E
+        self.level_counts = [0, 0]
         self.opposition_points = [[], []] # index 0 is the opposition points for N and S;
         self.eval_mode = eval
         self.random_agent = RandomAgent('random')
@@ -124,13 +128,17 @@ class Simulation:
                 if self.game_engine.opponent_points >= 80:
                     if self.game_engine.dealer_position in [AbsolutePosition.NORTH, AbsolutePosition.SOUTH]:
                         self.win_counts[1] += 1
+                        self.level_counts[1] += self.game_engine.final_opponent_reward
                     else:
                         self.win_counts[0] += 1
+                        self.level_counts[0] += self.game_engine.final_opponent_reward
                 else:
                     if self.game_engine.dealer_position in [AbsolutePosition.NORTH, AbsolutePosition.SOUTH]:
                         self.win_counts[0] += 1
+                        self.level_counts[0] += self.game_engine.final_defender_reward
                     else:
                         self.win_counts[1] += 1
+                        self.level_counts[1] += self.game_engine.final_defender_reward
                 
                 if self.game_engine.dealer_position in [AbsolutePosition.NORTH, AbsolutePosition.SOUTH]:
                     self.opposition_points[1].append(self.game_engine.opponent_points)
@@ -187,17 +195,15 @@ class Simulation:
 
                             if is_defender(ob.position):
                                 if self.game_engine.points_per_round[i] >= 0:
-                                    # rw += self.game_engine.points_per_round[i] / 120 # Defenders are only moderately happy when escaping points
-                                    rw += self.game_engine.points_per_round[i] / 80
+                                    rw += self.game_engine.points_per_round[i] / 40 # Defenders are only moderately happy when escaping points
                                 else:
-                                    rw += self.game_engine.points_per_round[i] / 80 # Defenders should care a lot about losing points
+                                    rw += self.game_engine.points_per_round[i] / 40 # Defenders should care a lot about losing points
                                 self._main_history_per_player[position][i] = (ob, ac, rw)
                             else:
                                 if self.game_engine.points_per_round[i] <= 0:
-                                    rw -= self.game_engine.points_per_round[i] / 80 # Opponents are happier when earning points
+                                    rw -= self.game_engine.points_per_round[i] / 40 # Opponents are happier when earning points
                                 else:
-                                    # rw -= self.game_engine.points_per_round[i] / 120 # Opponents are not so sad when they lose points
-                                    rw -= self.game_engine.points_per_round[i] / 80
+                                    rw -= self.game_engine.points_per_round[i] / 40 # Opponents are not so sad when they lose points
                                 self._main_history_per_player[position][i] = (ob, ac, rw)
                             self.main_history.append(self._main_history_per_player[position][i])
                         self._main_history_per_player[position].clear()
@@ -209,7 +215,8 @@ class Simulation:
             return False, None
 
     
-    def reset(self):
+    def reset(self, reuse_old_deck=False):
+        old_deck = self.game_engine.card_list
         self.game_engine = Game(
             dominant_rank=random.randint(2, 14),
             dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
@@ -219,6 +226,9 @@ class Simulation:
         self.declaration_history.clear()
         self.chaodi_history.clear()
         self.kitty_history.clear()
+
+        if reuse_old_deck:
+            self.game_engine.deck = iter(old_deck)
     
     def backprop(self):
         self.declare_agent.learn_from_samples(self.declaration_history)

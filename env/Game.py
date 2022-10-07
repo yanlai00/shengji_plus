@@ -11,7 +11,7 @@ from .CardSet import CardSet, MoveType
 import logging
 
 class Game:
-    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False) -> None:
+    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None) -> None:
         # Player information
         self.hands = {
             AbsolutePosition.NORTH: CardSet(),
@@ -25,8 +25,9 @@ class Game:
             AbsolutePosition.WEST: CardSet(),
             AbsolutePosition.EAST: CardSet()
         }
-        self.unplayed_cards, card_list = CardSet.new_deck()
-        self.deck = iter(card_list) # First 100 are drawn, last 8 given to dealer.
+        self.unplayed_cards, self.card_list = CardSet.new_deck()
+        self.card_list = deck or self.card_list
+        self.deck = iter(self.card_list) # First 100 are drawn, last 8 given to dealer.
         self.kitty = CardSet() # dealer puts the kitty in 8 rounds, one card per round
 
         # Public game information
