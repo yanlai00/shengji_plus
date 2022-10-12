@@ -1,10 +1,13 @@
 from asyncio.log import logger
 from collections import deque
+import logging
 import random
 import sys
 from typing import Deque, List, Tuple
 import torch
 import numpy as np
+
+from networks.StateAutoEncoder import StateAutoEncoder
 
 
 from .Agent import SJAgent
@@ -16,15 +19,16 @@ from env.Observation import Observation
 from networks.Models import *
 
 class DeepAgent(SJAgent):
-    def __init__(self, name: str, model: nn.Module, batch_size=64) -> None:
+    def __init__(self, name: str, model: nn.Module, batch_size=64, hash_model: StateAutoEncoder = None) -> None:
         super().__init__(name)
 
         self.model = model
         self.batch_size = batch_size
-        self.optimizer = torch.optim.RMSprop(model.parameters(), lr=0.0001, alpha=0.99)
-        # self.optimizer = torch.optim.Adam(model.parameters(), lr=0.0002)
+        self.optimizer = torch.optim.RMSprop(model.parameters(), lr=0.0001, alpha=0.99, eps=1e-5)
         self.loss_fn = nn.MSELoss()
         self.train_loss_history: List[float] = []
+        self.hash_loss_history: List[float] = []
+        self.hash_model = hash_model
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         raise NotImplementedError
@@ -37,16 +41,28 @@ class DeepAgent(SJAgent):
             loss = self.loss_fn(pred, rewards)
             self.optimizer.zero_grad()
             loss.backward()
-            # nn.utils.clip_grad_norm_(self.model.parameters(), 1000)
+            while torch.isnan(loss):
+                nn.init.xavier_uniform_(self.model)
+                pred = self.model(*args)
+                loss = self.loss_fn(pred, rewards)
+                self.optimizer.zero_grad()
+                loss.backward()
+                print(f"Model {self} encountered nan, reset weights to random.")
+            
+            nn.utils.clip_grad_norm_(self.model.parameters(), 100)
             self.optimizer.step()
             self.train_loss_history.append(loss.detach().item())
+
+            if self.hash_model is not None:
+                hash_loss = self.hash_model.update(args[0]) # args[0] is the state+action tensor representation
+                self.hash_loss_history.append(hash_loss)
 
 class DeclareAgent(DeepAgent):
     def __init__(self, name: str, model: DeclarationModel, batch_size=64) -> None:
         super().__init__(name, model, batch_size)
         self.model: DeclarationModel
 
-    def act(self, obs: Observation, explore=False, epsilon=None):
+    def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
             x_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(x_batch)
@@ -81,7 +97,7 @@ class KittyAgent(DeepAgent):
         super().__init__(name, model, batch_size)
         self.model: KittyModel
     
-    def act(self, obs: Observation, explore=False, epsilon=None):
+    def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
             state_batch, action_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(state_batch, action_batch)
@@ -114,11 +130,11 @@ class KittyAgent(DeepAgent):
 
 
 class ChaodiAgent(DeepAgent):
-    def __init__(self, name: str, model: ChaodiModel, batch_size=16) -> None:
+    def __init__(self, name: str, model: ChaodiModel, batch_size=32) -> None:
         super().__init__(name, model, batch_size)
         self.model: ChaodiModel
 
-    def act(self, obs: Observation, explore=False, epsilon=None):
+    def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
             x_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
             return self.model(x_batch)
@@ -149,14 +165,20 @@ class ChaodiAgent(DeepAgent):
      
     
 class MainAgent(DeepAgent):
-    def __init__(self, name: str, model: MainModel, batch_size=64) -> None:
+    def __init__(self, name: str, model: MainModel, batch_size=64, hash_model: StateAutoEncoder = None) -> None:
         super().__init__(name, model, batch_size)
         self.model: MainModel
+
+        self.hash_model = hash_model
     
-    def act(self, obs: Observation, explore=False, epsilon=None):
+    def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
             x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
-            return self.model(x_batch, history_batch)
+            if self.hash_model and training:
+                exploration_bonus = self.hash_model.exploration_bonus(x_batch)
+            else:
+                exploration_bonus = 0
+            return self.model(x_batch, history_batch) + exploration_bonus
 
         if explore:
             return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
@@ -171,6 +193,7 @@ class MainAgent(DeepAgent):
         gt_rewards = torch.zeros((len(samples), 1))
         for i, (obs, ac, rw) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_tensor
+            # cardset = ac.move.cardset if isinstance(ac, LeadAction) else ac.cardset
             state_tensor = torch.cat([
                 obs.perceived_cardsets, # (432,)
                 obs.dealer_position_tensor, # (4,)
@@ -180,7 +203,9 @@ class MainAgent(DeepAgent):
                 obs.points_tensor, # (80,)
                 obs.unplayed_cards_tensor, # (108,)
                 current_moves, # (328,)
-                obs.kitty_tensor
+                obs.kitty_tensor, # (108,)
+                # obs.current_dominating_player_index, # (3,)
+                # obs.dominates_all_tensor(cardset), # (1,)
             ])
             x_batch[i] = torch.cat([state_tensor, ac.tensor])
             history_batch[i] = historical_moves
@@ -218,7 +243,9 @@ class QLMainAgent(DeepAgent):
                 obs.points_tensor, # (80,)
                 obs.unplayed_cards_tensor, # (108,)
                 current_moves, # (328,)
-                obs.kitty_tensor
+                obs.kitty_tensor, # (108,)
+                obs.current_dominating_player_index, # (6,)
+                obs.dominates_all_tensor, # (1,)
             ])
             x_batch[i] = torch.cat([state_tensor, ac.tensor])
             history_batch[i] = historical_moves

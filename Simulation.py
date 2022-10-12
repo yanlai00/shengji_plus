@@ -9,8 +9,6 @@ from env.Game import Game, Stage
 from env.Actions import *
 from collections import deque
 
-FIXED_DECK = CardSet.new_deck()[1]
-
 class Simulation:
     def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98) -> None:
         "If eval = True, use random agents for East and West."
@@ -85,23 +83,23 @@ class Simulation:
             observation = self.game_engine.get_observation(self.current_player)
             if self.eval_mode and observation.position in [AbsolutePosition.EAST, AbsolutePosition.WEST]:
                 if self.game_engine.stage == Stage.declare_stage:
-                    action = (self.eval_declare or self.random_agent).act(observation)
+                    action = (self.eval_declare or self.random_agent).act(observation, training=False)
                 elif self.game_engine.stage == Stage.kitty_stage:
-                    action = (self.eval_kitty or self.random_agent).act(observation)
+                    action = (self.eval_kitty or self.random_agent).act(observation, training=False)
                 elif self.game_engine.stage == Stage.chaodi_stage:
-                    action = (self.eval_chaodi or self.random_agent).act(observation)
+                    action = (self.eval_chaodi or self.random_agent).act(observation, training=False)
                 else:
-                    action = (self.eval_main or self.random_agent).act(observation)
+                    action = (self.eval_main or self.random_agent).act(observation, training=False)
             else:
                 # Depending on the stage of the game, we use different agents to calculate an action
                 if self.game_engine.stage == Stage.declare_stage:
-                    action = self.declare_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
+                    action = self.declare_agent.act(observation, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
                 elif self.game_engine.stage == Stage.kitty_stage:
-                    action = self.kitty_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
+                    action = self.kitty_agent.act(observation, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
                 elif self.game_engine.stage == Stage.chaodi_stage:
-                    action = self.chaodi_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
+                    action = self.chaodi_agent.act(observation, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
                 else:
-                    action = self.main_agent.act(observation, epsilon=not self.eval_mode and self.epsilon)
+                    action = self.main_agent.act(observation, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
             
             last_stage = self.game_engine.stage
             last_player = self.current_player

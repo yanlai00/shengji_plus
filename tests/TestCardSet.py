@@ -364,6 +364,21 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.SPADE.tensor), TrumpSuite.SPADE)
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.XJ.tensor), TrumpSuite.XJ)
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.DJ.tensor), TrumpSuite.DJ)
+    
+    def test_create_cardset_from_hands(self):
+        deck1 = CardSet.make_tutorial_deck1()
+        deck1.reverse()
+        hands = [CardSet(), CardSet(), CardSet(), CardSet()]
+        kitty = CardSet()
+        for _ in range(25):
+            for i in range(4):
+                hands[i].add_card(deck1.pop())
+        for _ in range(8):
+            kitty.add_card(deck1.pop())
+        
+        for h in hands:
+            print(h)
+        print(kitty)
 
 if __name__ == '__main__':
     unittest.main()

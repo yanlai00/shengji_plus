@@ -109,7 +109,6 @@ class Game:
             # Combo is a catch-all type if we don't know the composition of the cardset
             for cardset in self.hands[position].get_matching_moves(MoveType.Combo(self.round_history[-1][1][0]), self.dominant_suite, self.dominant_rank):
                 actions.append(FollowAction(cardset))
-        
         assert actions, f"Agent {position} has no action to choose from!"
 
         observation = Observation(
@@ -127,7 +126,7 @@ class Game:
             unplayed_cards = self.unplayed_cards,
             leads_current_trick = self.round_history[-1][0] == position if self.round_history else position == self.dealer_position,
             chaodi_times = self.chaodi_times,
-            kitty = self.kitty if self.declarations and position == self.declarations[-1].absolute_position else None,
+            kitty = self.kitty if (self.declarations and position == self.declarations[-1].absolute_position) or (not self.declarations and self.dealer_position == position) else None,
             is_chaodi_turn = self.current_chaodi_turn == position,
             perceived_left = self.public_cards[position.last_position],
             perceived_right = self.public_cards[position.next_position],
@@ -325,7 +324,7 @@ class Game:
             else:
                 return player_position.next_position, 0
         
-        raise AssertionError(f"Unidentified action class {type(action)}")
+        raise AssertionError(f"Unidentified action class {type(action)}: {action}")
 
     def print_status(self):
         print("Hands:")

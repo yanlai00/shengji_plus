@@ -27,7 +27,7 @@ class Observation:
         self.perceived_right = perceived_right.copy()
         self.perceived_opposite = perceived_opposite.copy()
 
-        self.historical_rounds = 10
+        self.historical_rounds = 10 # TODO
 
         self.is_chaodi_turn = is_chaodi_turn
 
@@ -116,7 +116,7 @@ class Observation:
     
     @property
     def historical_moves_tensor(self):
-        "Returns two tensor of shape (10, 436), (328,) representing the historical rounds of the current game."
+        "Returns two tensor of shape (20, 436), (328,) representing the historical rounds of the current game."
         history_tensor = torch.zeros((min(20, len(self.round_history)), 4 + 4 * 108))
         position_order = [RelativePosition.SELF, RelativePosition.RIGHT, RelativePosition.OPPOSITE, RelativePosition.LEFT]
         for i, (pos, round) in enumerate(self.round_history[-self.historical_rounds - 1:]):
@@ -135,4 +135,18 @@ class Observation:
     @property
     def chaodi_times_tensor(self):
         return torch.tensor(self.chaodi_times)
+    
+    @property
+    def current_dominating_player_index(self):
+        encoding = torch.zeros(3) # first 3 represent which players have played. last 3 represent who's the biggest
+        if self.round_history[-1][1]:
+            winning_index = CardSet.round_winner(self.round_history[-1][1], self.declaration.suite if self.declaration else TrumpSuite.XJ, self.dominant_rank)
+            encoding[3 - len(self.round_history[-1][1]) + winning_index] = 1
+        return encoding
+
+    def dominates_all_tensor(self, cardset: CardSet):
+        if CardSet.round_winner(self.round_history[-1][1] + [cardset], self.declaration.suite if self.declaration else TrumpSuite.XJ, self.dominant_rank) == len(self.round_history[-1][1]):
+            return torch.tensor([1])
+        else:
+            return torch.tensor([0])
 

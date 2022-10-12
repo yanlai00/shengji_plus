@@ -505,6 +505,9 @@ class CardSet:
         else:
             raise AssertionError("Shouldn't get here")
 
+    def min_rank(self, dominant_suite: TrumpSuite, dominant_rank: int):
+        return min([get_rank(x, dominant_suite, dominant_rank) for x in self.card_list()])
+
     @classmethod
     def is_legal_combo(self, move: MoveType.Combo, other_players_cardsets: List['CardSet'], dominant_suite: TrumpSuite, dominant_rank: int):
         filtered_cardsets: List[CardSet] = [c.filter_by_suite(move.suite(dominant_suite, dominant_rank), dominant_suite, dominant_rank) for c in other_players_cardsets]
@@ -596,4 +599,51 @@ class CardSet:
         for i, card in enumerate(ORDERING):
             cardset.add_card(card, count=int(t[i * 2 : i * 2 + 2].sum()))
         return cardset
+
+    @classmethod
+    def create_deck_from_hands(self, hands: List[List[str]], kitty: List[str]):
+        assert len(hands) == 4, 'There must be 4 provided hands'
+        deck = []
+        for card_list in hands:
+            random.shuffle(card_list)
+        for h1, h2, h3, h4 in zip(*hands):
+            deck.extend([h1, h2, h3, h4])
+        
+        return deck + kitty
+
+    @classmethod
+    def make_tutorial_deck1(self):
+        card_lists = [
+            CardSet({
+                '3♠': 2, '4♠': 2, '5♠': 2, '6♠': 2, '7♠': 2, '8♠': 2, '9♠': 2, '10♠': 2, 'J♠': 2, 'Q♠': 2, 'K♠': 2, 'A♠': 2,
+                'XJ': 1, # '10♥': 1, '10♠': 1, '9♥': 1, 'K♦': 1, 'A♦': 1
+            }).card_list(),
+            CardSet({
+                '3♦': 2, '4♦': 2, '5♦': 2, '6♦': 2, '7♦': 2, '8♦': 2, '9♦': 2, '10♦': 2, 'J♦': 2, 'Q♦': 2, 'K♦': 2, 'A♦': 2,
+                'DJ': 1,
+            }).card_list(),
+            CardSet({
+                '3♣': 2, '4♣': 2, '5♣': 2, '6♣': 2, '7♣': 2, '8♣': 2, '9♣': 2, '10♣': 2, 'J♣': 2, 'Q♣': 2, 'K♣': 2, 'A♣': 2,
+                'XJ': 1,
+            }).card_list(),
+            CardSet({
+                '3♥': 2, '4♥': 2, '5♥': 2, '6♥': 2, '7♥': 2, '8♥': 2, '9♥': 2, '10♥': 2, 'J♥': 2, 'Q♥': 2, 'K♥': 2, 'A♥': 2,
+                'DJ': 1,
+            }).card_list()
+        ]
+
+        kitty = CardSet({'2♥': 2, '2♣': 2, '2♦': 2, '2♠': 2}).card_list()
+
+        # Swap some cards between the players
+        for _ in range(2):
+            for h1 in card_lists:
+                for h2 in card_lists:
+                    i = random.randint(0, 24)
+                    j = random.randint(0, 24)
+                    h1[i], h2[j] = h2[j], h1[i]
+                i = random.randint(0, 24)
+                k = random.randint(0, 7)
+                h1[i], kitty[k] = kitty[k], h1[i]
+        return self.create_deck_from_hands(card_lists, kitty)
+        
 

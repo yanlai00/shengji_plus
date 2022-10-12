@@ -8,21 +8,21 @@
 #SBATCH -n 1 # number of tasks (i.e. processes)
 #SBATCH --cpus-per-task=4 # number of cores per task
 #SBATCH --gres=gpu:1
-#SBATCH --mem=16G
-#SBATCH --nodelist=manchester # if you need specific nodes
+#SBATCH --mem=22G
+#SBATCH --nodelist=pavia # if you need specific nodes
 #SBATCH --exclude=blaze,freddie # nodes not yet on SLURM-only
 #SBATCH -t 2-00:00 # time requested (D-HH:MM)
 # slurm will cd to this directory before running the script
 # you can also just run sbatch submit.sh from the directory
 # you want to be in
-#SBATCH -D /home/eecs/jiarui.shan/videodepth-SimpleNet
+#SBATCH -D /home/eecs/jiarui.shan/cs285-shengji
 # use these two lines to control the output file. Default is
 # slurm-<jobid>.out. By default stdout and stderr go to the same
 # place, but if you use both commands below they'll be split up
 # filename patterns here: https://slurm.schedmd.com/sbatch.html
 # %N is the hostname (if used, will create output(s) per node)
 # %j is jobid
-#SBATCH -o slurm.%N.%j.out # STDOUT
+#SBATCH -o slurm_logs/medium_baseline.%N.%j.out # STDOUT
 ##SBATCH -e slurm.%N.%j.err # STDERR
 # if you want to get emails as your jobs run/fail
 #SBATCH --mail-type=ALL # Mail events (NONE, BEGIN, END, FAIL, ALL)
@@ -51,7 +51,7 @@ export PYTHONUNBUFFERED=1
 python3 -c "import torch; print('There are', torch.cuda.device_count(), 'GPU(s)')"
 # python3 EigenTrain.py
 
-python3 TrainLoop.py --games 500 --model_folder small
+python3 TrainLoop.py --model-folder medium_with_baseline --discount 0.5 --tutorial-prob 0.2 --test-agent StrategicAgent
 
 # print completion time
 date

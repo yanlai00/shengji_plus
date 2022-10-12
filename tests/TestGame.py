@@ -8,7 +8,7 @@ sys.path.append('.')
 from agents.RLAgents import ChaodiAgent, DeclareAgent, KittyAgent, MainAgent
 from networks.Models import ChaodiModel, DeclarationModel, KittyModel, MainModel
 from Simulation import Simulation
-from agents.Agent import RandomAgent, SJAgent
+from agents.Agent import RandomAgent, SJAgent, StrategicAgent
 from env.Actions import DeclareAction, DontDeclareAction, PlaceKittyAction
 from env.utils import AbsolutePosition, Declaration, TrumpSuite
 from env.CardSet import CardSet
@@ -79,14 +79,18 @@ class TestGame(unittest.TestCase):
             main_agent=MainAgent('Main', main_model),
             declare_agent=DeclareAgent('Declare', declare_model),
             kitty_agent=KittyAgent('Kitty', kitty_model),
-            chaodi_agent=ChaodiAgent('Chaodi', chaodi_model)
+            chaodi_agent=ChaodiAgent('Chaodi', chaodi_model),
+            baseline=StrategicAgent('s')
         )
+
         logging.getLogger().setLevel(logging.DEBUG)
         
         while sim.step()[0]: pass
-
         print(sim.game_engine.print_status())
-        breakpoint()
+
+        sim.reset()
+
+        while sim.step()[0]: pass
 
 
 
