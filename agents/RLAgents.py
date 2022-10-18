@@ -42,14 +42,17 @@ class DeepAgent(SJAgent):
             self.optimizer.zero_grad()
             loss.backward()
             while torch.isnan(loss):
-                nn.init.xavier_uniform_(self.model)
+                def init_weights(m):
+                    if isinstance(m, nn.Linear):
+                        nn.init.xavier_uniform_(m.weight.data)
+                self.model.apply(init_weights)
                 pred = self.model(*args)
                 loss = self.loss_fn(pred, rewards)
                 self.optimizer.zero_grad()
                 loss.backward()
                 print(f"Model {self} encountered nan, reset weights to random.")
             
-            nn.utils.clip_grad_norm_(self.model.parameters(), 100)
+            nn.utils.clip_grad_norm_(self.model.parameters(), 80)
             self.optimizer.step()
             self.train_loss_history.append(loss.detach().item())
 
@@ -173,7 +176,7 @@ class MainAgent(DeepAgent):
     
     def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
-            x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0)])
+            x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0, None)])
             if self.hash_model and training:
                 exploration_bonus = self.hash_model.exploration_bonus(x_batch)
             else:
@@ -187,11 +190,11 @@ class MainAgent(DeepAgent):
         else:
             return max(obs.actions, key=reward)
     
-    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
+    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]]):
         x_batch = torch.zeros((len(samples), 1196))
         history_batch = torch.zeros((len(samples), 20, 436)) # Store up to last 15 rounds of history
         gt_rewards = torch.zeros((len(samples), 1))
-        for i, (obs, ac, rw) in enumerate(samples):
+        for i, (obs, ac, rw, _) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_tensor
             # cardset = ac.move.cardset if isinstance(ac, LeadAction) else ac.cardset
             state_tensor = torch.cat([
@@ -214,24 +217,71 @@ class MainAgent(DeepAgent):
         return x_batch.to(device), history_batch.to(device), gt_rewards.to(device)
 
 # Q learning
-class QLMainAgent(DeepAgent):
-    def __init__(self, name: str, model: nn.Module, batch_size=64) -> None:
+class QLearningMainAgent(DeepAgent):
+    def __init__(self, name: str, model: MainModel, value_model: ValueModel, batch_size=50, discount=0.99, hash_model: StateAutoEncoder = None) -> None:
         super().__init__(name, model, batch_size)
+        
+        self.hash_model = hash_model
+        self.discount = discount
+        self.value_network = value_model
+        self.value_optimizer = torch.optim.RMSprop(self.value_network.parameters(), lr=0.0002, alpha=0.99, eps=1e-5)
+        self.value_loss_history = []
+    
+    def act(self, obs: Observation, explore=False, epsilon=None, training=True):
+        def reward(a: Action):
+            x_batch, history_batch, *_ = self.prepare_batch_inputs([(obs, a, 0, None)])
+            if self.hash_model and training:
+                exploration_bonus = self.hash_model.exploration_bonus(x_batch)
+            else:
+                exploration_bonus = 0
+            return self.model(x_batch, history_batch) + exploration_bonus
 
-        self.target_network = MainModel()
-        self.target_network.load_state_dict(model.state_dict())
+        if explore:
+            return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
+        elif epsilon and random.random() < epsilon:
+            return random.choice(obs.actions)
+        else:
+            return max(obs.actions, key=reward)
 
     def learn_from_samples(self, samples: List[Tuple[Observation, Action, float, Observation]]):
         splits = int(len(samples) / self.batch_size)
         for subsamples in np.array_split(samples, max(1, splits), axis=0):
-            pass
+            state_and_action, history, rewards, next_state, next_history, terminals = self.prepare_batch_inputs(subsamples)
+
+            # Update Q network
+            with torch.no_grad():
+                next_values = self.value_network.forward(next_state, next_history)
+            
+            pred_values = self.model.forward(state_and_action, history)
+            target_values = rewards + self.discount * (1 - terminals) * next_values
+            q_loss = self.loss_fn(pred_values, target_values)
+
+            self.optimizer.zero_grad()
+            q_loss.backward()
+            self.optimizer.step()
+
+            # Update Value network
+            pred_values = self.value_network(state_and_action[:, :-108], history)
+            v_loss = self.loss_fn(pred_values, target_values)
+
+            self.value_optimizer.zero_grad()
+            v_loss.backward()
+            self.optimizer.step()
+
+            self.value_loss_history.append(v_loss.detach().item())
+            self.train_loss_history.append(q_loss.detach().item())
+
+            if self.hash_model is not None:
+                hash_loss = self.hash_model.update(state_and_action)
+                self.hash_loss_history.append(hash_loss)
     
-    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]]):
+    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Union[Observation, None]]]):
         x_batch = torch.zeros((len(samples), 1196))
-        next_x_batch = torch.zeros((len(samples), 1088))
-        history_batch = torch.zeros((len(samples), 15, 436)) # Store up to last 15 rounds of history
-        next_history_batch = torch.zeros((len(samples), 15, 436))
+        next_state_batch = torch.zeros((len(samples), 1088))
+        history_batch = torch.zeros((len(samples), 20, 436)) # Store up to last 15 rounds of history
+        next_history_batch = torch.zeros((len(samples), 20, 436))
         gt_rewards = torch.zeros((len(samples), 1))
+        terminals = torch.zeros(len(samples), 1)
         for i, (obs, ac, rw, next_obs) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_tensor
             state_tensor = torch.cat([
@@ -244,26 +294,27 @@ class QLMainAgent(DeepAgent):
                 obs.unplayed_cards_tensor, # (108,)
                 current_moves, # (328,)
                 obs.kitty_tensor, # (108,)
-                obs.current_dominating_player_index, # (6,)
-                obs.dominates_all_tensor, # (1,)
             ])
             x_batch[i] = torch.cat([state_tensor, ac.tensor])
             history_batch[i] = historical_moves
             
-            next_historical_moves, next_current_moves = next_obs.historical_moves_tensor
-            next_state_tensor = torch.cat([
-                next_obs.perceived_cardsets, # (432,)
-                next_obs.dealer_position_tensor, # (4,)
-                next_obs.trump_tensor, # (20,)
-                next_obs.declarer_position_tensor, # (4,)
-                next_obs.chaodi_times_tensor, # (4,)
-                next_obs.points_tensor, # (80,)
-                next_obs.unplayed_cards_tensor, # (108,)
-                next_current_moves, # (328,)
-                next_obs.kitty_tensor
-            ])
-            next_x_batch[i] = next_state_tensor
-            next_history_batch[i] = next_historical_moves
+            if next_obs is not None:
+                next_historical_moves, next_current_moves = next_obs.historical_moves_tensor
+                next_state_tensor = torch.cat([
+                    next_obs.perceived_cardsets, # (432,)
+                    next_obs.dealer_position_tensor, # (4,)
+                    next_obs.trump_tensor, # (20,)
+                    next_obs.declarer_position_tensor, # (4,)
+                    next_obs.chaodi_times_tensor, # (4,)
+                    next_obs.points_tensor, # (80,)
+                    next_obs.unplayed_cards_tensor, # (108,)
+                    next_current_moves, # (328,)
+                    next_obs.kitty_tensor
+                ])
+                next_state_batch[i] = next_state_tensor
+                next_history_batch[i] = next_historical_moves
+            else:
+                terminals[i] = 1
             gt_rewards[i] = rw
         device = next(self.model.parameters()).device
-        return x_batch.to(device), history_batch.to(device), gt_rewards.to(device), next_x_batch.to(device), next_history_batch.to(device)
+        return x_batch.to(device), history_batch.to(device), gt_rewards.to(device), next_state_batch.to(device), next_history_batch.to(device), terminals.to(device)

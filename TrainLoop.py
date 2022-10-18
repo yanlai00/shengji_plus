@@ -19,7 +19,7 @@ global_kitty_queue = ctx.Queue(maxsize=100)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01):
     train_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
@@ -40,7 +40,7 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
                 local_kitty.extend(train_sim.kitty_history[:])
             
             train_sim.reset()
-            train_sim.epsilon = max(0.01, train_sim.epsilon / decay_factor)
+            train_sim.epsilon = max(epsilon, train_sim.epsilon / decay_factor)
         global_main_queue.put(local_main)
         global_declare_queue.put(local_declare)
         global_chaodi_queue.put(local_chaodi)
@@ -75,7 +75,7 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
     exit(0)
 
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16):
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc'):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -114,7 +114,17 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if os.path.exists(f'{model_folder}/main.pt'):
         main_model.load_state_dict(torch.load(f'{model_folder}/main.pt', map_location=device), strict=False)
         print("Using loaded model for main game")
-    main_agent = MainAgent('main', main_model, hash_model=hash_autoencoder)
+    
+    if model_type == 'mc':
+        main_agent = MainAgent('main', main_model, hash_model=hash_autoencoder)
+    elif model_type == 'dqn':
+        value_model = ValueModel().to(device)
+        if os.path.exists(f'{model_folder}/value.pt'):
+            value_model.load_state_dict(torch.load(f'{model_folder}/value.pt', map_location=device))
+            print("Using loaded value model")
+        value_model.share_memory()
+
+        main_agent = QLearningMainAgent('main', main_model, value_model, discount=discount, hash_model=hash_autoencoder)
     
     declare_model.share_memory()
     kitty_model.share_memory()
@@ -166,6 +176,8 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             chaodi_agent.optimizer.load_state_dict(state['chaodi_optim_state'])
             if state.get('hash_model_optim_state', None) and hash_autoencoder:
                 hash_autoencoder.optimizer.load_state_dict(state['hash_model_optim_state'])
+            if isinstance(main_agent, QLearningMainAgent):
+                main_agent.value_optimizer.load_state_dict(state['value_optim_state'])
             print(f"Using checkpoint at iteration {iterations}")
         with open(f'{model_folder}/stats.pkl', mode='rb') as f:
             stats = pickle.load(f)
@@ -175,8 +187,8 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
     
     if not eval_only:
-        for i in range(10):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos))
+        for i in range(1 if single_process else 10):
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon))
             actor.start()
             actor_processes.append(actor)
             
@@ -207,6 +219,11 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
                 if not hash_autoencoder.enabled:
                     hash_autoencoder.enabled |= True
                     print("Turning on hash exploration bonus starting in next iteration...")
+            
+            if isinstance(main_agent, QLearningMainAgent):
+                torch.save(main_agent.value_network.state_dict(), f'{model_folder}/value.pt')
+                print("value loss:", np.mean(main_agent.value_loss_history))
+                main_agent.value_loss_history.clear()
             
             main_agent.train_loss_history.clear()
             declare_agent.train_loss_history.clear()
@@ -277,7 +294,8 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
                     'declare_optim_state': declare_agent.optimizer.state_dict(),
                     'kitty_optim_state': kitty_agent.optimizer.state_dict(),
                     'chaodi_optim_state': chaodi_agent.optimizer.state_dict(),
-                    'hash_model_optim_state': hash_autoencoder.optimizer.state_dict() if hash_autoencoder else None
+                    'hash_model_optim_state': hash_autoencoder.optimizer.state_dict() if hash_autoencoder else None,
+                    'value_optim_state': main_agent.value_optimizer.state_dict() if isinstance(main_agent, QLearningMainAgent) else None
                 }, f)
         else:
             break
@@ -289,6 +307,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval-only', action='store_true')
     parser.add_argument('--eval-size', type=int, default=300)
     parser.add_argument('--model-folder', type=str, default='pretrained')
+    parser.add_argument('--model-type', type=str, default='mc', choices=['mc', 'dqn'])
     parser.add_argument('--compare', type=str, default='')
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--discount', type=float, default=0.95)
@@ -296,9 +315,8 @@ if __name__ == '__main__':
     parser.add_argument('--random-seed', type=int, default=1)
     parser.add_argument('--enable-combos', action='store_true')
     parser.add_argument('--single-process', action='store_true')
-    parser.add_argument('--tutorial-prob', type=float, default=0.0)
     parser.add_argument('--epsilon', type=float, default=0.01)
     parser.add_argument('--hash-exploration', action='store_true')
     parser.add_argument('--hash-length', type=int, default=16)
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type)
