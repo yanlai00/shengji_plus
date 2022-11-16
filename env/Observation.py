@@ -33,6 +33,10 @@ class Observation:
 
     def __repr__(self) -> str:
         return f"Observation({self.position.value}, hand={self.hand})"
+    
+    @property
+    def dominant_suit(self):
+        return self.declaration.suite if self.declaration else TrumpSuite.XJ
 
     @property
     def points_tensor(self):
@@ -80,7 +84,16 @@ class Observation:
     @property
     def kitty_tensor(self):
         "If the player buried the kitty, return information about the kitty. Otherwise, return an empty matrix. Shape: (108,)"
-        return self.kitty.tensor if self.kitty is not None else torch.zeros(108)
+        return self.kitty if self.kitty is not None else torch.zeros(108)
+    
+    @property
+    def kitty_dynamic_tensor(self):
+        "If the player buried the kitty, return information about the kitty. Otherwise, return an empty matrix. Shape: (108,)"
+        return self.kitty.get_dynamic_tensor(self.dominant_suit, self.dominant_rank) if self.kitty is not None else torch.zeros(108)
+    
+    @property
+    def dynamic_hand_tensor(self):
+        return self.hand.get_dynamic_tensor(self.declaration.suite if self.declaration else TrumpSuite.XJ, self.dominant_rank)
     
     @property
     def unplayed_cards_tensor(self):
@@ -90,6 +103,15 @@ class Observation:
             unplayed.remove_cardset(self.kitty)
         unplayed.remove_cardset(self.hand)
         return unplayed.tensor
+    
+    @property
+    def unplayed_cards_dynamic_tensor(self):
+        "Returns a (108,) tensor representing all cards not played (and not owned by the current player)."
+        unplayed = self.unplayed_cards.copy()
+        if self.kitty:
+            unplayed.remove_cardset(self.kitty)
+        unplayed.remove_cardset(self.hand)
+        return unplayed.get_dynamic_tensor(self.dominant_suit, self.dominant_rank)
     
     @property
     def perceived_cardsets(self):
@@ -117,7 +139,7 @@ class Observation:
     @property
     def historical_moves_tensor(self):
         "Returns two tensor of shape (20, 436), (328,) representing the historical rounds of the current game."
-        history_tensor = torch.zeros((min(20, len(self.round_history)), 4 + 4 * 108))
+        history_tensor = torch.zeros((min(15, len(self.round_history)), 4 + 4 * 108))
         position_order = [RelativePosition.SELF, RelativePosition.RIGHT, RelativePosition.OPPOSITE, RelativePosition.LEFT]
         for i, (pos, round) in enumerate(self.round_history[-self.historical_rounds - 1:]):
             current_player_index = position_order.index(pos)
@@ -127,14 +149,40 @@ class Observation:
                 current_player_index = (current_player_index + 1) % 4
         
         padded_history = torch.vstack([
-            torch.zeros((20 - history_tensor.shape[0], 436)),
+            torch.zeros((15 - history_tensor.shape[0], 436)),
+            history_tensor
+        ])
+        return padded_history, torch.cat([history_tensor[-1][:4], history_tensor[-1][112:]])
+    
+    @property
+    def historical_moves_dynamic_tensor(self):
+        "Returns two tensor of shape (20, 436), (328,) representing the historical rounds of the current game."
+        history_tensor = torch.zeros((min(15, len(self.round_history)), 4 + 4 * 108))
+        position_order = [RelativePosition.SELF, RelativePosition.RIGHT, RelativePosition.OPPOSITE, RelativePosition.LEFT]
+        for i, (pos, round) in enumerate(self.round_history[-self.historical_rounds - 1:]):
+            current_player_index = position_order.index(pos)
+            history_tensor[i, current_player_index] = 1
+            for cardset in round:
+                history_tensor[i, 4 + 108 * current_player_index : 4 + 108 * (current_player_index + 1)] = cardset.get_dynamic_tensor(self.dominant_suit, self.dominant_rank)
+                current_player_index = (current_player_index + 1) % 4
+        
+        padded_history = torch.vstack([
+            torch.zeros((15 - history_tensor.shape[0], 436)),
             history_tensor
         ])
         return padded_history, torch.cat([history_tensor[-1][:4], history_tensor[-1][112:]])
 
     @property
     def chaodi_times_tensor(self):
-        return torch.tensor(self.chaodi_times)
+        chaodi_times = torch.zeros(4)
+        positions = ['N', 'W', 'S', 'E']
+        current_position = self.position
+        for i in range(4):
+            idx = positions.index(current_position)
+            chaodi_times[i] = self.chaodi_times[idx]
+            current_position = current_position.next_position
+        
+        return chaodi_times
     
     @property
     def current_dominating_player_index(self):

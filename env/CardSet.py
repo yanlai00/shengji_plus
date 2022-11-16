@@ -610,6 +610,78 @@ class CardSet:
             deck.extend([h1, h2, h3, h4])
         
         return deck + kitty
+    
+    def get_dynamic_tensor(self, trump_suit: TrumpSuite, dominant_rank: int):
+        rep = torch.zeros(108)
+        
+        index = 0
+        # First 66 or 88 cards in the order: diamonds, clubs, hearts, spades, ignoring trump cards
+        for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
+            if not trump_suit.is_NT and suit == trump_suit: continue
+            for numeric_rank, letter_rank in LETTER_RANK.items():
+                card = letter_rank + suit
+                if numeric_rank != dominant_rank:
+                    if self._cards[card] >= 1:
+                        rep[index] = 1
+                    if self._cards[card] == 2:
+                        rep[index + 1] = 1
+                    index += 2
+        
+        # Trump suit
+        if not trump_suit.is_NT:
+            for numeric_rank, letter_rank in LETTER_RANK.items():
+                card = letter_rank + trump_suit
+                if numeric_rank != dominant_rank:
+                    rep[index:index + self._cards[card]] = 1
+                    index += 2
+            
+        # Next 8 cards are dominant rank cards
+        for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
+            card = LETTER_RANK[dominant_rank] + suit
+            rep[index:index + self._cards[card]] = 1
+            index += 2
+            
+        # Last 4 cards are the jokers
+        rep[104:104 + self._cards[TrumpSuite.XJ]] = 1
+        rep[106:106 + self._cards[TrumpSuite.DJ]] = 1
+
+        return rep
+    
+    @classmethod
+    def from_dynamic_tensor(self, rep: torch.Tensor, trump_suit: TrumpSuite, dominant_rank: int):
+        cardset = CardSet()
+
+        index = 0
+        for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
+            if not trump_suit.is_NT and suit == trump_suit: continue
+            for numeric_rank, letter_rank in LETTER_RANK.items():
+                card = letter_rank + suit
+                if numeric_rank != dominant_rank:
+                    cardset.add_card(card, count=rep[index])
+                    cardset.add_card(card, count=rep[index + 1])
+                    index += 2
+        
+        # Trump suit
+        if not trump_suit.is_NT:
+            for numeric_rank, letter_rank in LETTER_RANK.items():
+                card = letter_rank + trump_suit
+                if numeric_rank != dominant_rank:
+                    cardset.add_card(card, count=rep[index])
+                    cardset.add_card(card, count=rep[index + 1])
+                    index += 2
+        
+        # Next 8 cards are dominant rank cards
+        for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
+            card = LETTER_RANK[dominant_rank] + suit
+            cardset.add_card(card, count=rep[index])
+            cardset.add_card(card, count=rep[index + 1])
+            index += 2
+
+        # Last 4 cards are the jokers
+        cardset.add_card(TrumpSuite.XJ, count=rep[104] + rep[105])
+        cardset.add_card(TrumpSuite.DJ, count=rep[106] + rep[107])
+
+        return cardset
 
     @classmethod
     def make_tutorial_deck1(self):

@@ -51,6 +51,71 @@ class KittyModel(nn.Module):
         x = self.fc4(x)
         return x
 
+class KittyRNNModel(nn.Module):
+    "The kitty model's observation includes: the player's cards, the player's position relative to the dealer, current declaration, position of current declaration, known trump cards in each player's hand (same as those in DeclarationModel)."
+    def __init__(self, rnn_type='lstm') -> None:
+        super().__init__()
+
+        self.rnn_type = rnn_type
+        self.card_embedding = nn.Embedding(54, 64)
+        if rnn_type == 'gru':
+            self.rnn = nn.GRU(input_size=64, hidden_size=128, num_layers=1, batch_first=True)
+        else:
+            self.rnn = nn.LSTM(input_size=64, hidden_size=128, num_layers=1, batch_first=True)
+        self.in1 = nn.Linear(64, 72)
+        self.in2 = nn.Linear(72, 128)
+
+
+        self.out1 = nn.Linear(128, 128)
+        self.out2 = nn.Linear(128, 1)
+    
+    def forward(self, x: torch.Tensor, hand: torch.Tensor, card: torch.Tensor):
+        """
+        Performs the forward pass of kitty placement reward prediction. The input tensors should have shape (B, 172) and (B,), where B is the batch dimension. The first 172 values are for the observation, and the last B values are the indexes of the card to discard.
+        """
+
+        sequence =  self.card_embedding(torch.cat([hand, card], dim=-1))
+        initial_state = self.in1(x)
+        initial_state = torch.relu(initial_state)
+        initial_state = self.in2(initial_state)
+
+        if self.rnn_type == 'gru':
+            _, h_n = self.rnn.forward(sequence, initial_state.unsqueeze(0))
+        else:
+            _, (h_n, _) = self.rnn.forward(sequence, (initial_state.unsqueeze(0), initial_state.unsqueeze(0)))
+        x = self.out1(h_n.squeeze(0))
+        x = torch.relu(x)
+        x = self.out2(x)
+        return x
+
+class KittyArgmaxModel(nn.Module):
+    "The kitty model's observation includes: the player's cards, the player's position relative to the dealer, current declaration, position of current declaration, known trump cards in each player's hand (same as those in DeclarationModel)."
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.single_card_embedding = nn.Embedding(54, 10)
+        self.fc1 = nn.Linear(172 + 33 * 10, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 256)
+        self.fc4 = nn.Linear(256, 33)
+        self.softmax = nn.Softmax(dim=-1)
+    
+    def forward(self, x: torch.Tensor, cards: torch.Tensor):
+        """
+        Performs the forward pass of kitty placement reward prediction. The input tensors should have shape (B, 172) and (B,), where B is the batch dimension. The first 172 values are for the observation, and the last B values are the indexes of the card to discard.
+        """
+
+        card_embeddings = self.single_card_embedding(cards).view((x.shape[0], -1))
+
+        x = self.fc1(torch.hstack([x, card_embeddings]))
+        x = torch.relu(x)
+        x = self.fc2(x)
+        x = torch.relu(x)
+        x = self.fc3(x)
+        x = torch.relu(x)
+        x = self.fc4(x)
+        return self.softmax(x)
+
 class ChaodiModel(nn.Module):
     "The chaodi model's observation includes: the player's cards, the player's position relative to the dealer, current declaration, position of current declaration, known trump cards in each player's hand."
     def __init__(self) -> None:
@@ -89,24 +154,26 @@ class MainModel(nn.Module):
         super().__init__()
 
         self.lstm = nn.LSTM(436, 256, batch_first=True)
-        self.fc1 = nn.Linear(1196 + 256, 768)
+        self.fc1 = nn.Linear(1196 - 3 * 108 + 256 + 1, 768)
         self.fc2 = nn.Linear(768, 512)
-        self.fc3 = nn.Linear(512, 1)
-        # self.fc4 = nn.Linear(256, 1)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 128)
+        self.fc5 = nn.Linear(128, 1)
     
     def forward(self, x: torch.Tensor, history: torch.Tensor):
-        if history.shape[1] > 0:
-            history_out, _ = self.lstm(history)
-            history_out = history_out[:, -1, :]
-        else:
-            history_out = torch.zeros((x.shape[0], 256))
-        x = self.fc1(torch.hstack([x, history_out]))
+        # history_out, _ = self.lstm(history)
+        # history_out = history_out[:, -1, :]
+        _, (history_out, _) = self.lstm(history) # experimental \
+        
+        x = self.fc1(torch.hstack([x, history_out.squeeze(0)]))
         x = torch.relu(x)
         x = self.fc2(x)
         x = torch.relu(x)
         x = self.fc3(x)
-        # x = torch.relu(x)
-        # x = self.fc4(x)
+        x = torch.relu(x)
+        x = self.fc4(x)
+        x = torch.relu(x)
+        x = self.fc5(x)
         return x
 
 class ValueModel(nn.Module):
@@ -127,9 +194,13 @@ class ValueModel(nn.Module):
         super().__init__()
 
         self.lstm = nn.LSTM(436, 256, batch_first=True)
-        self.fc1 = nn.Linear(1088 + 256, 768)
+        self.fc1 = nn.Linear(1088 - 3 * 108 + 256, 768)
         self.fc2 = nn.Linear(768, 512)
         self.fc3 = nn.Linear(512, 1)
+
+        nn.init.xavier_uniform_(self.fc1.weight)
+        nn.init.xavier_uniform_(self.fc2.weight)
+        nn.init.xavier_uniform_(self.fc3.weight)
         # self.fc4 = nn.Linear(256, 1)
     
     def forward(self, x: torch.Tensor, history: torch.Tensor):

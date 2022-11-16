@@ -45,6 +45,20 @@ class RandomAgent(SJAgent):
         else:
             return random.choice(combo) if random.random() > 0.9 else random.choice(non_combo)
 
+class InteractiveAgent(SJAgent):
+    def act(self, obs: Observation, **kwargs):
+        if len(obs.actions) == 1 and obs.stage == Stage.declare_stage: return obs.actions[0]
+        print(f'current hand ({obs.position.value}):', obs.hand)
+        for i, a in enumerate(obs.actions):
+            print(f'{i:>5}\t{a}')
+        while True:
+            idx = input("Enter action index: ")
+            try:
+                return obs.actions[int(idx)]
+            except:
+                continue
+            
+
 class StrategicAgent(SJAgent):
     def act(self, obs: Observation, **kwargs):
         dominant_suite = obs.declaration.suite if obs.declaration else TrumpSuite.XJ

@@ -188,9 +188,24 @@ class Game:
         
         elif isinstance(action, PlaceKittyAction):
             assert self.kitty.size < 8, "Kitty already has 8 cards"
+
+            suite_count_before = 0
+            original_hand = self.hands[player_position].copy()
+            original_hand.add_cardset(self.kitty)
+            for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE]:
+                if original_hand.count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
+                    suite_count_before += 1
+
             self.kitty.add_card(action.card)
             self.hands[player_position].remove_card(action.card)
             logging.debug(f"Player {player_position} discarded {action.card} to kitty")
+
+            suite_count_after = 0
+            for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE]:
+                if self.hands[player_position].count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
+                    suite_count_after += 1
+            
+            reward = 0.5 * (suite_count_before - suite_count_after) # Encourage players to get rid of a suite completely
             if self.kitty.size == 8:
                 if not self.round_history:
                     self.round_history.append((player_position, []))
@@ -202,16 +217,16 @@ class Game:
                 logging.debug(f"  Kitty: {self.kitty}")
                 logging.info(f"Player {player_position.value} discarded kitty: {self.kitty}")
             else:
-                return player_position, 0 # Current player needs to first finish placing kitty
+                return player_position, reward # Current player needs to first finish placing kitty
             
             if not self.enable_chaodi or not self.declarations:
                 self.stage = Stage.play_stage
-                return self.dealer_position, 0
+                return self.dealer_position, reward
             else:
                 self.stage = Stage.chaodi_stage
                 self.initial_chaodi_position = player_position
                 self.current_chaodi_turn = player_position.next_position
-                return player_position.next_position, 0
+                return player_position.next_position, reward
         
         elif isinstance(action, DontChaodiAction):
             logging.debug(f"Player {player_position} chose not to chaodi")

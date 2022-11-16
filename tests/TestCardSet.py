@@ -364,21 +364,15 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.SPADE.tensor), TrumpSuite.SPADE)
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.XJ.tensor), TrumpSuite.XJ)
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.DJ.tensor), TrumpSuite.DJ)
+
     
-    def test_create_cardset_from_hands(self):
-        deck1 = CardSet.make_tutorial_deck1()
-        deck1.reverse()
-        hands = [CardSet(), CardSet(), CardSet(), CardSet()]
-        kitty = CardSet()
-        for _ in range(25):
-            for i in range(4):
-                hands[i].add_card(deck1.pop())
-        for _ in range(8):
-            kitty.add_card(deck1.pop())
+    def test_dynamic_representation(self):
+        hand = CardSet()
+        for card in CardSet.new_deck()[1][:25]:
+            hand.add_card(card)
         
-        for h in hands:
-            print(h)
-        print(kitty)
+        dt = hand.get_dynamic_tensor(TrumpSuite.CLUB, 3)
+        self.assertEqual(CardSet.from_dynamic_tensor(dt, TrumpSuite.CLUB, 3), hand)
 
 if __name__ == '__main__':
     unittest.main()

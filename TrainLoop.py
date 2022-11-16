@@ -5,6 +5,7 @@ import shutil
 from torch.multiprocessing import Process, Lock, Queue
 import torch, os
 from Simulation import Simulation
+from agents.Agent import InteractiveAgent, RandomAgent
 from agents.RLAgents import *
 import argparse
 import tqdm
@@ -12,10 +13,10 @@ import numpy as np
 from networks.StateAutoEncoder import StateAutoEncoder
 
 ctx = torch.multiprocessing.get_context('spawn')
-global_main_queue = ctx.Queue(maxsize=100)
-global_chaodi_queue = ctx.Queue(maxsize=100)
-global_declare_queue = ctx.Queue(maxsize=100)
-global_kitty_queue = ctx.Queue(maxsize=100)
+global_main_queue = ctx.Queue(maxsize=50)
+global_chaodi_queue = ctx.Queue(maxsize=50)
+global_declare_queue = ctx.Queue(maxsize=50)
+global_kitty_queue = ctx.Queue(maxsize=50)
 actor_processes = []
 
 # Parallelized data sampling
@@ -75,7 +76,7 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
     exit(0)
 
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc'):
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random'):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -96,19 +97,38 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if os.path.exists(f'{model_folder}/declare.pt'):
         declare_agent = declare_model.load_state_dict(torch.load(f'{model_folder}/declare.pt', map_location=device), strict=False)
         print("Using loaded model for declaration")
-    declare_agent = DeclareAgent('declare', declare_model)
+    declare_agent = DeclareAgent('declare', declare_model, tau=tau)
     
-    kitty_model = KittyModel().to(device)
-    if os.path.exists(f'{model_folder}/kitty.pt'):
-        kitty_model.load_state_dict(torch.load(f'{model_folder}/kitty.pt', map_location=device), strict=False)
-        print("Using loaded model for kitty")
-    kitty_agent = KittyAgent('kitty', kitty_model)
+    if kitty_agent == 'fc':
+        kitty_model = KittyModel().to(device)
+        if os.path.exists(f'{model_folder}/kitty.pt'):
+            kitty_model.load_state_dict(torch.load(f'{model_folder}/kitty.pt', map_location=device), strict=False)
+            print("Using loaded model for kitty")
+        kitty_agent = KittyAgent('kitty', kitty_model, tau=tau)
+    elif kitty_agent == 'argmax':
+        kitty_model = KittyArgmaxModel().to(device)
+        if os.path.exists(f'{model_folder}/kitty_argmax.pt'):
+            kitty_model.load_state_dict(torch.load(f'{model_folder}/kitty_argmax.pt', map_location=device), strict=False)
+            print("Using loaded model for kitty argmax")
+        kitty_agent = KittyArgmaxAgent('kitty_argmax', kitty_model, tau=tau)
+    elif kitty_agent == 'rnn':
+        kitty_model = KittyRNNModel().to(device)
+        if os.path.exists(f'{model_folder}/kitty_rnn.pt'):
+            kitty_model.load_state_dict(torch.load(f'{model_folder}/kitty_rnn.pt', map_location=device), strict=False)
+            print("Using loaded model for kitty rnn")
+        kitty_agent = KittyRNNAgent('kitty_rnn', kitty_model, tau=tau)
+    else:
+        kitty_model = KittyRNNModel(rnn_type='lstm').to(device)
+        if os.path.exists(f'{model_folder}/kitty_lstm.pt'):
+            kitty_model.load_state_dict(torch.load(f'{model_folder}/kitty_lstm.pt', map_location=device), strict=False)
+            print("Using loaded model for kitty lstm")
+        kitty_agent = KittyRNNAgent('kitty_lstm', kitty_model, tau=tau)
     
     chaodi_model = ChaodiModel().to(device)
     if os.path.exists(f'{model_folder}/chaodi.pt'):
         chaodi_model.load_state_dict(torch.load(f'{model_folder}/chaodi.pt', map_location=device), strict=False)
         print("Using loaded model for chaodi")
-    chaodi_agent = ChaodiAgent('chaodi', chaodi_model)
+    chaodi_agent = ChaodiAgent('chaodi', chaodi_model, tau=tau)
 
     main_model = MainModel().to(device)
     if os.path.exists(f'{model_folder}/main.pt'):
@@ -116,7 +136,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         print("Using loaded model for main game")
     
     if model_type == 'mc':
-        main_agent = MainAgent('main', main_model, hash_model=hash_autoencoder)
+        main_agent = MainAgent('main', main_model, hash_model=hash_autoencoder, tau=tau)
     elif model_type == 'dqn':
         value_model = ValueModel().to(device)
         if os.path.exists(f'{model_folder}/value.pt'):
@@ -124,7 +144,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             print("Using loaded value model")
         value_model.share_memory()
 
-        main_agent = QLearningMainAgent('main', main_model, value_model, discount=discount, hash_model=hash_autoencoder)
+        main_agent = QLearningMainAgent('main', main_model, value_model, discount=discount, hash_model=hash_autoencoder, tau=tau)
     
     declare_model.share_memory()
     kitty_model.share_memory()
@@ -135,9 +155,18 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if compare:
         eval_main_model = MainModel().to(device)
         eval_main_model.load_state_dict(torch.load(f'{compare}/main.pt', map_location=device), strict=False)
-        print(f"Using main model in {compare} for comparison")
-        eval_main = MainAgent("main", eval_main_model)
 
+        if os.path.exists(f'{compare}/value.pt'):
+            eval_value_model = ValueModel().to(device)
+            eval_value_model.load_state_dict(torch.load(f'{compare}/value.pt', map_location=device))
+            print(f"Using loaded value model in {compare} for comparison")
+            eval_value_model.share_memory()
+            eval_main = QLearningMainAgent('main', eval_main_model, eval_value_model, discount=discount)
+        else:
+            print(f"Using main model in {compare} for comparison")
+            eval_main = MainAgent('main', eval_main_model)
+        
+        # TODO: support kitty argmax in compare mode
         eval_kitty_model = KittyModel().to(device)
         eval_kitty_model.load_state_dict(torch.load(f'{compare}/kitty.pt', map_location=device), strict=False)
         print(f"Using kitty model in {compare} for comparison")
@@ -231,6 +260,10 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             chaodi_agent.train_loss_history.clear()
         
         print("Evaluating model performance...")
+        if eval_agent_type == 'random':
+            eval_agent = RandomAgent('random')
+        else:
+            eval_agent = InteractiveAgent('interactive')
         if single_process:
             eval_sim = Simulation(
                 main_agent=main_agent,
@@ -238,6 +271,10 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
                 kitty_agent=kitty_agent,
                 chaodi_agent=chaodi_agent,
                 enable_combos=combos,
+                eval_chaodi=eval_agent,
+                eval_kitty=eval_agent,
+                eval_declare=eval_agent,
+                eval_main=eval_agent,
                 eval=True
             )
             for _ in tqdm.tqdm(range(eval_size)):
@@ -318,5 +355,8 @@ if __name__ == '__main__':
     parser.add_argument('--epsilon', type=float, default=0.01)
     parser.add_argument('--hash-exploration', action='store_true')
     parser.add_argument('--hash-length', type=int, default=16)
+    parser.add_argument('--tau', type=float, default=0.1)
+    parser.add_argument('--kitty-agent', type=str, default='fc', choices=['fc', 'argmax', 'rnn', 'lstm'])
+    parser.add_argument('--eval-agent', type=str, default='random', choices=['random', 'interactive'])
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent)

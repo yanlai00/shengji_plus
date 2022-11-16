@@ -3,6 +3,7 @@ import logging
 import random
 from typing import Deque, Dict, List, Tuple
 from agents.Agent import RandomAgent, SJAgent
+from agents.RLAgents import QLearningMainAgent
 from env.Observation import Observation
 from env.utils import AbsolutePosition 
 from env.Game import Game, Stage
@@ -10,7 +11,7 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, cumulative_rewards=True) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98) -> None:
         "If eval = True, use random agents for East and West."
 
         self.main_agent = main_agent
@@ -72,7 +73,7 @@ class Simulation:
         }
         self.chaodi_history: List[Tuple[Observation, Action, float]] = []
 
-        self.cumulative_rewards = cumulative_rewards # Whether to compute cumulative rewards at the end
+        self.cumulative_rewards = not isinstance(main_agent, QLearningMainAgent) # Whether to compute cumulative rewards at the end
 
     def step(self):
         "Step the game and return whether the game is still ongoing."
@@ -187,11 +188,11 @@ class Simulation:
                             ob, ac, rw = self._main_history_per_player[position][i]
 
                             # Add reward from next time step if there is one, otherwise assign final reward
-                            if self.cumulative_rewards:
-                                if i + 1 < len(self._main_history_per_player[position]):
+                            if i + 1 < len(self._main_history_per_player[position]):
+                                if self.cumulative_rewards:
                                     rw += self.discount * self._main_history_per_player[position][i+1][2]
-                                else:
-                                    rw += self.game_engine.final_defender_reward if is_defender(ob.position) else self.game_engine.final_opponent_reward
+                            else:
+                                rw += self.game_engine.final_defender_reward if is_defender(ob.position) else self.game_engine.final_opponent_reward
 
                             # Add rewards for points earned / lost in current round
                             if is_defender(ob.position):
