@@ -20,7 +20,7 @@ global_kitty_queue = ctx.Queue(maxsize=50)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_prob=0):
     train_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
@@ -40,14 +40,14 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
                 local_chaodi.extend(train_sim.chaodi_history[:])
                 local_kitty.extend(train_sim.kitty_history[:])
             
-            train_sim.reset()
-            train_sim.epsilon = max(epsilon, train_sim.epsilon / decay_factor)
+            train_sim.reset(reuse_old_deck=random.random() < reuse_prob)
+        train_sim.epsilon = max(epsilon, train_sim.epsilon / decay_factor)
         global_main_queue.put(local_main)
         global_declare_queue.put(local_declare)
         global_chaodi_queue.put(local_chaodi)
         global_kitty_queue.put(local_kitty)
 
-def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, eval_size, eval_results_queue: Queue, verbosity=logging.WARNING):
+def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, eval_size, eval_results_queue: Queue, verbosity=logging.WARNING, learn_from_eval=False):
     logging.getLogger().setLevel(verbosity)
     eval_sim = Simulation(
         main_agent=main_agent,
@@ -59,7 +59,8 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
         eval_declare=eval_declare,
         eval_kitty=eval_kitty,
         eval_chaodi=eval_chaodi,
-        eval=True
+        eval=True,
+        learn_from_eval=learn_from_eval
     )
     for _ in range(eval_size):
         with torch.no_grad():
@@ -71,12 +72,17 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
             win_index,
             opponent_index,
             eval_sim.game_engine.opponent_points,
-            abs(eval_sim.game_engine.final_defender_reward)))
+            abs(eval_sim.game_engine.final_defender_reward),
+            eval_sim.main_history[:],
+            eval_sim.declaration_history[:],
+            eval_sim.chaodi_history[:],
+            eval_sim.kitty_history[:]
+        ))
         eval_sim.reset()
     exit(0)
 
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random'):
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_old_deck_prob=0.0):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -192,6 +198,9 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     else:
         logging.getLogger().setLevel(logging.WARN)
     
+    with open(f'{model_folder}/command.txt', mode='w') as f:
+        f.write(' '.join(sys.argv))
+    
     stats = []
     iterations = 0
 
@@ -217,7 +226,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     
     if not eval_only:
         for i in range(1 if single_process else 10):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon))
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_old_deck_prob))
             actor.start()
             actor_processes.append(actor)
             
@@ -293,17 +302,40 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             eval_queue = ctx.Queue()
             eval_actors = []
             for i in range(min(eval_size, eval_count)):
-                actor = ctx.Process(target=evaluator, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, max(1, eval_size // eval_count), eval_queue, logging.DEBUG if verbose else logging.WARNING))
+                actor = ctx.Process(target=evaluator, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, max(1, eval_size // eval_count), eval_queue, logging.DEBUG if verbose else logging.WARNING, learn_from_eval))
                 actor.start()
                 eval_actors.append(actor)
         
-
+            # Collect the games where the agent has lost
+            failed_main_history, failed_declare_history, failed_chaodi_history, failed_kitty_history = [], [], [], []
+            accumulated_failed_games = 0
             with tqdm.tqdm(total=eval_size) as progress_bar:
                 for i in range(eval_size):
-                    win_index, opponent_index, points, levels = eval_queue.get()
+                    win_index, opponent_index, points, levels, main_history, declare_history, chaodi_history, kitty_history = eval_queue.get()
                     win_counts[win_index] += 1
                     level_counts[win_index] += levels
                     opposition_points[opponent_index].append(points)
+                    if learn_from_eval and win_index == 1: # index 0 means agent won, 1 means baseline model won
+                        failed_main_history.extend(main_history)
+                        failed_declare_history.extend(declare_history)
+                        failed_chaodi_history.extend(chaodi_history)
+                        failed_kitty_history.extend(kitty_history)
+                        accumulated_failed_games += 1
+                        if accumulated_failed_games == 10:
+                            try:
+                                global_main_queue.put(failed_main_history, block=False)
+                            except: pass
+                            try:
+                                global_declare_queue.put(failed_declare_history, block=False)
+                            except: pass
+                            try:
+                                global_chaodi_queue.put(failed_chaodi_history, block=False)
+                            except: pass
+                            try:
+                                global_kitty_queue.put(failed_kitty_history, block=False)
+                            except: pass
+                            failed_main_history, failed_declare_history, failed_chaodi_history, failed_kitty_history = [], [], [], []
+                            accumulated_failed_games = 0
                     progress_bar.update(1)
                 
         
@@ -358,5 +390,7 @@ if __name__ == '__main__':
     parser.add_argument('--tau', type=float, default=0.1)
     parser.add_argument('--kitty-agent', type=str, default='fc', choices=['fc', 'argmax', 'rnn', 'lstm'])
     parser.add_argument('--eval-agent', type=str, default='random', choices=['random', 'interactive'])
+    parser.add_argument('--learn-from-eval', action='store_true')
+    parser.add_argument('--reuse_old_deck_prob', type=float, default=0)
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_old_deck_prob)

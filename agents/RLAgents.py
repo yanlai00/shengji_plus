@@ -89,7 +89,7 @@ class DeclareAgent(DeepAgent):
         for i, (obs, ac, rw) in enumerate(samples):
             assert isinstance(ac, DeclareAction) or isinstance(ac, DontDeclareAction), "DeclareAgent can only handle declare actions"
             state_tensor = torch.cat([
-                obs.hand.tensor, # (108,)
+                obs.dynamic_hand_tensor, # (108,)
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)
@@ -125,7 +125,7 @@ class KittyAgent(DeepAgent):
         for i, (obs, ac, rw) in enumerate(samples):
             assert isinstance(ac, PlaceKittyAction), "KittyAgent can only handle place kitty actions"
             state_tensor = torch.cat([
-                obs.hand.tensor, # (108,)
+                obs.dynamic_hand_tensor, # (108,)
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)

@@ -156,9 +156,15 @@ class MainModel(nn.Module):
         self.lstm = nn.LSTM(436, 256, batch_first=True)
         self.fc1 = nn.Linear(1196 - 3 * 108 + 256 + 1, 768)
         self.fc2 = nn.Linear(768, 512)
-        self.fc3 = nn.Linear(512, 256)
-        self.fc4 = nn.Linear(256, 128)
-        self.fc5 = nn.Linear(128, 1)
+        self.fc_rest = nn.Sequential(
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU()
+        )
+        self.fc_final = nn.Linear(512, 1)
     
     def forward(self, x: torch.Tensor, history: torch.Tensor):
         # history_out, _ = self.lstm(history)
@@ -169,11 +175,8 @@ class MainModel(nn.Module):
         x = torch.relu(x)
         x = self.fc2(x)
         x = torch.relu(x)
-        x = self.fc3(x)
-        x = torch.relu(x)
-        x = self.fc4(x)
-        x = torch.relu(x)
-        x = self.fc5(x)
+        x = self.fc_rest(x)
+        x = self.fc_final(x)
         return x
 
 class ValueModel(nn.Module):
