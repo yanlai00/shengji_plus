@@ -129,11 +129,19 @@ class StrategicAgent(SJAgent):
                 second_best_actions = []
                 other_actions = []
                 for action in obs.actions:
+                    action: LeadAction
                     d = action.move.cardset.decompose(dominant_suite, obs.dominant_rank)
                     
                     # For simplicity, this agent doesn't play combos
                     if len(d) > 1:
-                        continue
+                        # If the combo is unbeatable (unless using trump cards)
+                        if CardSet.is_bigger_than(obs.unplayed_cards, action.move, obs.dominant_suit, obs.dominant_rank) is None:
+                            # If the combo contains a pair of a tractor, then it's probably a good move to play
+                            if not all([isinstance(component, MoveType.Single) for component in d]):
+                                optimal_actions.append(action)
+                            else:
+                                second_best_actions.append(action)
+                        print(action.move)
                     elif action.move.cardset.count_suite(CardSuite.TRUMP, dominant_suite, obs.dominant_rank) == 0:
                         min_rank = d[0].cardset.min_rank(dominant_suite, obs.dominant_rank)
                         if isinstance(d[0], MoveType.Tractor) or isinstance(d[0], MoveType.Pair) and min_rank >= 8 and isinstance(d[0], MoveType.Single) and (min_rank == 14 or obs.dominant_rank == 14 and min_rank == 13):

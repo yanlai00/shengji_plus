@@ -93,28 +93,31 @@ class KittyArgmaxModel(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-        self.single_card_embedding = nn.Embedding(54, 10)
-        self.fc1 = nn.Linear(172 + 33 * 10, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 256)
-        self.fc4 = nn.Linear(256, 33)
-        self.softmax = nn.Softmax(dim=-1)
+        self.card_embedding = nn.Embedding(54, 64)
+        self.rnn = nn.LSTM(input_size=64, hidden_size=256, num_layers=1, batch_first=True)
+        self.in1 = nn.Linear(172, 172)
+        self.in2 = nn.Linear(172, 256)
+
+
+        self.out1 = nn.Linear(256, 256)
+        self.out2 = nn.Linear(256, 1)
     
     def forward(self, x: torch.Tensor, cards: torch.Tensor):
         """
         Performs the forward pass of kitty placement reward prediction. The input tensors should have shape (B, 172) and (B,), where B is the batch dimension. The first 172 values are for the observation, and the last B values are the indexes of the card to discard.
         """
+        card_embeddings = self.card_embedding(cards)
 
-        card_embeddings = self.single_card_embedding(cards).view((x.shape[0], -1))
+        initial_state = self.in1(x)
+        initial_state = torch.relu(initial_state)
+        initial_state = self.in2(initial_state)
 
-        x = self.fc1(torch.hstack([x, card_embeddings]))
+        out, (h_n, _) = self.rnn.forward(card_embeddings, (initial_state.unsqueeze(0), initial_state.unsqueeze(0)))
+        x = self.out1(out)
         x = torch.relu(x)
-        x = self.fc2(x)
-        x = torch.relu(x)
-        x = self.fc3(x)
-        x = torch.relu(x)
-        x = self.fc4(x)
-        return self.softmax(x)
+        x = self.out2(x).squeeze(-1)
+
+        return torch.sigmoid(x)
 
 class ChaodiModel(nn.Module):
     "The chaodi model's observation includes: the player's cards, the player's position relative to the dealer, current declaration, position of current declaration, known trump cards in each player's hand."
@@ -123,7 +126,8 @@ class ChaodiModel(nn.Module):
 
         self.fc1 = nn.Linear(178, 256)
         self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 1)
+        self.fc3 = nn.Linear(256, 256)
+        self.fc4 = nn.Linear(256, 1)
 
     def forward(self, x: torch.Tensor):
         """
@@ -134,6 +138,8 @@ class ChaodiModel(nn.Module):
         x = self.fc2(x)
         x = torch.relu(x)
         x = self.fc3(x)
+        x = torch.relu(x)
+        x = self.fc4(x)
         return x
 
 class MainModel(nn.Module):

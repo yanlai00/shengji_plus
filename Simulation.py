@@ -11,18 +11,32 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False, warmup_games=0, tutorial_prob=0.0) -> None:
         "If eval = True, use random agents for East and West."
+
+        self.remaining_warmup_games = warmup_games
+        self.tutorial_prob = tutorial_prob
 
         self.main_agent = main_agent
         self.declare_agent = declare_agent
         self.kitty_agent = kitty_agent
         self.chaodi_agent = chaodi_agent
-        self.game_engine = Game(
-            dominant_rank=random.randint(2, 14),
-            dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
-            enable_chaodi=chaodi_agent is not None,
-            enable_combos=enable_combos)
+        if self.remaining_warmup_games > 0:
+            self.remaining_warmup_games -= 1
+            self.game_engine = Game(
+                dominant_rank=random.choice([2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14]),
+                dealer_position=None,
+                enable_chaodi=chaodi_agent is not None,
+                enable_combos=False,
+                is_warmup_game=True
+            )
+        else:
+            self.game_engine = Game(
+                dominant_rank=random.randint(2, 14),
+                dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
+                enable_chaodi=chaodi_agent is not None,
+                enable_combos=enable_combos
+            )
 
         self.current_player = None
         self.discount = discount
@@ -254,18 +268,30 @@ class Simulation:
     def reset(self, reuse_old_deck=False):
         old_deck = self.game_engine.card_list
         old_dealer = self.game_engine.dealer_position
-        self.game_engine = Game(
-            dominant_rank=random.randint(2, 14),
-            dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
-            enable_chaodi=self.game_engine.enable_chaodi,
-            enable_combos=self.game_engine.enable_combos)
+        if self.remaining_warmup_games > 0:
+            self.remaining_warmup_games -= 1
+            self.game_engine = Game(
+                dominant_rank=random.choice([2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14]),
+                dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
+                enable_chaodi=self.game_engine.enable_chaodi,
+                enable_combos=False,
+                is_warmup_game=True
+            )
+        else:
+            self.game_engine = Game(
+                dominant_rank=random.randint(2, 14),
+                dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
+                enable_chaodi=self.game_engine.enable_chaodi,
+                enable_combos=self.game_engine.enable_combos,
+                tutorial_prob=self.tutorial_prob
+            )
         self.main_history.clear()
         self.declaration_history.clear()
         self.chaodi_history.clear()
         self.kitty_history.clear()
 
         # If reuse_old_deck, then re-play the game using the same hands
-        if reuse_old_deck:
+        if not self.game_engine.is_warmup_game and reuse_old_deck:
             self.game_engine.deck = iter(old_deck)
             self.game_engine.dealer_position = old_dealer
     

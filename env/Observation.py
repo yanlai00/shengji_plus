@@ -110,7 +110,7 @@ class Observation:
         unplayed = self.unplayed_cards.copy()
         if self.kitty:
             unplayed.remove_cardset(self.kitty)
-        unplayed.remove_cardset(self.hand)
+        unplayed.remove_cardset(self.hand, strict=False)
         return unplayed.get_dynamic_tensor(self.dominant_suit, self.dominant_rank)
     
     @property

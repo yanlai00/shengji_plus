@@ -1,4 +1,5 @@
 # Represent a set of cards in a Shengji game.
+from datetime import datetime
 import json
 from random import shuffle
 import random
@@ -152,7 +153,7 @@ class CardSet:
     
     def draw_N_cards(self, N: int):
         assert N <= self.size, "Cannot draw more cards than there are available"
-        ordering = []
+        ordering: List[str] = []
         for card, count in self._cards.items():
             ordering.extend([card] * count)
         
@@ -163,16 +164,17 @@ class CardSet:
         
         return selected_cards
         
-    def remove_card(self, card: str, count=1):
-        assert self._cards[card] >= count, "Cannot play the given card"
+    def remove_card(self, card: str, count=1, strict=True):
+        if strict:
+            assert self._cards[card] >= count, "Cannot play the given card"
         if self._cards[card] >= count:
             self._cards[card] -= count
         else:
-            print(f"WARNING: attempting to remove a non-existent card ({card}) from cardset")
+            self._cards[card] = 0
     
-    def remove_cardset(self, cardset: 'CardSet'):
+    def remove_cardset(self, cardset: 'CardSet', strict=True):
         for card in cardset.card_list():
-            self.remove_card(card)
+            self.remove_card(card, strict=strict)
     
     def card_list(self):
         "Return a list of cards contained in this CardSet."
@@ -225,6 +227,7 @@ class CardSet:
             for card in self.card_list():
                 cards_by_suite[get_suite(card, dominant_suite, dominant_rank)].add_card(card)
             for suite, suite_cardset in cards_by_suite.items():
+                if suite == CardSuite.TRUMP: continue
                 records = set()
                 for size in range(1, suite_cardset.size + 1):
                     for combo in itertools.combinations(suite_cardset.card_list(), size):
@@ -235,8 +238,8 @@ class CardSet:
                         if combo_cardset not in records:
                             records.add(combo_cardset)
                             moves.append(MoveType.Combo(combo_cardset) if len(components) > 1 else components[0])
-            
-            return moves
+            if moves:
+                return moves
 
         pair_cards: List[str] = []
         # First add all singles and pairs
@@ -454,7 +457,7 @@ class CardSet:
                 
     def is_bigger_than(self, move: MoveType, dominant_suite: TrumpSuite, dominant_rank: int):
         "Determine if this cardset can beat a given move. If so, return the decomposition. If not, return None."
-        assert self.size == move.cardset.size, "CardSets must be the same size to compare"
+        # assert self.size == move.cardset.size, "CardSets must be the same size to compare"
 
         self_components = self.get_leading_moves(dominant_suite, dominant_rank)
         first_component = max(self_components, key=lambda c: c.cardset.size)
@@ -684,38 +687,50 @@ class CardSet:
         return cardset
 
     @classmethod
-    def make_tutorial_deck1(self):
-        card_lists = [
+    def get_tutorial_deck(self):
+        """
+        A tutorial deck demonstrates the most extreme cases of the game. In this example, each player owns almost an entire suit.
+        """
+
+        # Each player starts with an entire suit
+        hands = [
             CardSet({
-                '3♠': 2, '4♠': 2, '5♠': 2, '6♠': 2, '7♠': 2, '8♠': 2, '9♠': 2, '10♠': 2, 'J♠': 2, 'Q♠': 2, 'K♠': 2, 'A♠': 2,
-                'XJ': 1, # '10♥': 1, '10♠': 1, '9♥': 1, 'K♦': 1, 'A♦': 1
-            }).card_list(),
-            CardSet({
-                '3♦': 2, '4♦': 2, '5♦': 2, '6♦': 2, '7♦': 2, '8♦': 2, '9♦': 2, '10♦': 2, 'J♦': 2, 'Q♦': 2, 'K♦': 2, 'A♦': 2,
-                'DJ': 1,
-            }).card_list(),
-            CardSet({
-                '3♣': 2, '4♣': 2, '5♣': 2, '6♣': 2, '7♣': 2, '8♣': 2, '9♣': 2, '10♣': 2, 'J♣': 2, 'Q♣': 2, 'K♣': 2, 'A♣': 2,
+                '2♠': 2, '3♠': 2, '4♠': 2, '5♠': 2, '6♠': 2, '7♠': 2, '8♠': 2, '9♠': 2, '10♠': 2, 'J♠': 2, 'Q♠': 2, 'K♠': 2, 'A♠': 2,
                 'XJ': 1,
-            }).card_list(),
+            }),
             CardSet({
-                '3♥': 2, '4♥': 2, '5♥': 2, '6♥': 2, '7♥': 2, '8♥': 2, '9♥': 2, '10♥': 2, 'J♥': 2, 'Q♥': 2, 'K♥': 2, 'A♥': 2,
+                '2♦': 2, '3♦': 2, '4♦': 2, '5♦': 2, '6♦': 2, '7♦': 2, '8♦': 2, '9♦': 2, '10♦': 2, 'J♦': 2, 'Q♦': 2, 'K♦': 2, 'A♦': 2,
                 'DJ': 1,
-            }).card_list()
+            }),
+            CardSet({
+                '2♣': 2, '3♣': 2, '4♣': 2, '5♣': 2, '6♣': 2, '7♣': 2, '8♣': 2, '9♣': 2, '10♣': 2, 'J♣': 2, 'Q♣': 2, 'K♣': 2, 'A♣': 2,
+                'XJ': 1,
+            }),
+            CardSet({
+                '2♥': 2, '3♥': 2, '4♥': 2, '5♥': 2, '6♥': 2, '7♥': 2, '8♥': 2, '9♥': 2, '10♥': 2, 'J♥': 2, 'Q♥': 2, 'K♥': 2, 'A♥': 2,
+                'DJ': 1,
+            })
         ]
+        random.shuffle(hands)
 
-        kitty = CardSet({'2♥': 2, '2♣': 2, '2♦': 2, '2♠': 2}).card_list()
+        # choose a random rank to use as kitty
+        rank = random.randint(2, 14)
+        kitty = CardSet({
+            LETTER_RANK[rank] + CardSuite.CLUB: 2,
+            LETTER_RANK[rank] + CardSuite.DIAMOND: 2,
+            LETTER_RANK[rank] + CardSuite.HEART: 2,
+            LETTER_RANK[rank] + CardSuite.SPADE: 2,
+        })
 
-        # Swap some cards between the players
-        for _ in range(2):
-            for h1 in card_lists:
-                for h2 in card_lists:
-                    i = random.randint(0, 24)
-                    j = random.randint(0, 24)
-                    h1[i], h2[j] = h2[j], h1[i]
-                i = random.randint(0, 24)
-                k = random.randint(0, 7)
-                h1[i], kitty[k] = kitty[k], h1[i]
-        return self.create_deck_from_hands(card_lists, kitty)
+        # Make sure no one has the kitty cards
+        for hand in hands:
+            hand.remove_cardset(kitty, strict=False)
+        
+        hands[0].add_cardset(kitty)
+
+        # Randomly take out 8 cards from the dealer's hand to use as kitty
+        kitty = hands[0].draw_N_cards(8)
+
+        return self.create_deck_from_hands([hand.card_list() for hand in hands], kitty)
         
 

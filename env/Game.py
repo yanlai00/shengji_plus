@@ -3,7 +3,7 @@
 from math import ceil
 import random
 from typing import List, Tuple, Union
-from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceKittyAction
+from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceAllKittyAction, PlaceKittyAction
 
 from env.Observation import Observation
 from env.utils import *
@@ -11,7 +11,7 @@ from .CardSet import CardSet, MoveType
 import logging
 
 class Game:
-    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None) -> None:
+    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, tutorial_prob=0.0) -> None:
         # Player information
         self.hands = {
             AbsolutePosition.NORTH: CardSet(),
@@ -26,7 +26,10 @@ class Game:
             AbsolutePosition.EAST: CardSet()
         }
         self.unplayed_cards, self.card_list = CardSet.new_deck()
-        self.card_list = deck or self.card_list
+        if is_warmup_game or random.random() < tutorial_prob:
+            self.card_list = CardSet.get_tutorial_deck()
+        else:
+            self.card_list = deck or self.card_list
         self.deck = iter(self.card_list) # First 100 are drawn, last 8 given to dealer.
         self.kitty = CardSet() # dealer puts the kitty in 8 rounds, one card per round
 
@@ -61,6 +64,7 @@ class Game:
         self.enable_combos = enable_combos
 
         self.draw_order = []
+        self.is_warmup_game = is_warmup_game # In a warm up game, we don't allow declarations for fairness
 
     @property
     def dominant_suite(self):
@@ -86,16 +90,17 @@ class Game:
         actions: List[Action] = []
 
         if self.stage == Stage.declare_stage: # Stage 1: drawing cards phase
-            for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suite == suite or self.declarations[-1].absolute_position != position):
-                    actions.append(DeclareAction(Declaration(suite, level, position)))
+            if not self.is_warmup_game:
+                for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
+                    if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suite == suite or self.declarations[-1].absolute_position != position):
+                        actions.append(DeclareAction(Declaration(suite, level, position)))
             actions.append(DontDeclareAction())
         elif self.hands[position].size > 25: # Stage 2: choosing the kitty
             for card, count in self.hands[position]._cards.items():
                 if count > 0: actions.append(PlaceKittyAction(card, count))
         elif self.current_chaodi_turn == position:
             # Chaodi
-            if self.enable_chaodi:
+            if self.enable_chaodi and self.declarations:
                 for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
                     if self.declarations and Declaration.chaodi_level(suite, level) > Declaration.chaodi_level(self.declarations[-1].suite, self.declarations[-1].level):
                         actions.append(ChaodiAction(Declaration(suite, level, position)))
@@ -104,7 +109,14 @@ class Game:
         elif self.round_history[-1][0] == position:
             # For training purpose, maybe first turn off combos?
             for move in self.hands[position].get_leading_moves(self.dominant_suite, self.dominant_rank, include_combos=self.enable_combos):
-                actions.append(LeadAction(move))
+                complement = self.unplayed_cards.copy()
+                complement.remove_cardset(self.hands[position])
+                if isinstance(move, MoveType.Combo):
+                    # Only consider combos that cannot be beaten by the combined cards of the other players
+                    if CardSet.is_bigger_than(complement, move, self.dominant_suite, self.dominant_rank) is None:
+                        actions.append(LeadAction(move))
+                else:
+                    actions.append(LeadAction(move))
         else:
             # Combo is a catch-all type if we don't know the composition of the cardset
             for cardset in self.hands[position].get_matching_moves(MoveType.Combo(self.round_history[-1][1][0]), self.dominant_suite, self.dominant_rank):
@@ -152,8 +164,6 @@ class Game:
                     return self.current_declaration_turn, 0
                     
             elif sum([h.size for h in self.hands.values()]) < 100: # Distribute the next card from the deck if less than 100 are distributed.
-                if self.hands[player_position.next_position].size >= 25:
-                    breakpoint()
                 assert self.hands[player_position.next_position].size < 25, "Current player already has 25 cards"
                 next_card = next(self.deck)
                 self.hands[player_position.next_position].add_card(next_card)
@@ -190,10 +200,8 @@ class Game:
             assert self.kitty.size < 8, "Kitty already has 8 cards"
 
             suite_count_before = 0
-            original_hand = self.hands[player_position].copy()
-            original_hand.add_cardset(self.kitty)
             for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE]:
-                if original_hand.count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
+                if self.hands[player_position].count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
                     suite_count_before += 1
 
             self.kitty.add_card(action.card)
@@ -217,9 +225,9 @@ class Game:
                 logging.debug(f"  Kitty: {self.kitty}")
                 logging.info(f"Player {player_position.value} discarded kitty: {self.kitty}")
             else:
-                return player_position, reward # Current player needs to first finish placing kitty
+                return player_position, 0 # Current player needs to first finish placing kitty
             
-            if not self.enable_chaodi or not self.declarations:
+            if not self.enable_chaodi:
                 self.stage = Stage.play_stage
                 return self.dealer_position, reward
             else:
@@ -228,6 +236,22 @@ class Game:
                 self.current_chaodi_turn = player_position.next_position
                 return player_position.next_position, reward
         
+        elif isinstance(action, PlaceAllKittyAction):
+            self.kitty.add_cardset(action.cards)
+            self.hands[player_position].remove_cardset(action.cards)
+            logging.debug(f"Player {player_position.value} discarded kitty {action.cards}")
+            if not self.round_history:
+                self.round_history.append((player_position, []))
+            
+            if not self.enable_chaodi or not self.declarations:
+                self.stage = Stage.play_stage
+                return self.dealer_position, 0
+            else:
+                self.stage = Stage.chaodi_stage
+                self.initial_chaodi_position = player_position
+                self.current_chaodi_turn = player_position.next_position
+                return player_position.next_position, 0
+
         elif isinstance(action, DontChaodiAction):
             logging.debug(f"Player {player_position} chose not to chaodi")
             # Note: chaodi is only an option if no one declares.
@@ -263,6 +287,7 @@ class Game:
                 for card in action.move.cardset.card_list():
                     if self.public_cards[player_position].has_card(card):
                         self.public_cards[player_position].remove_card(card)
+                return player_position.next_position, 0
             else:
                 self.round_history[-1][1].append(penalty_move)
                 self.hands[player_position].remove_cardset(penalty_move)
@@ -276,7 +301,7 @@ class Game:
                         self.public_cards[player_position]._cards[card] = count
 
                 logging.debug(f"Combo move failed. Player {player_position.value} forced to play {penalty_move}")
-            return player_position.next_position, 0
+                return player_position.next_position, -0.1
         elif isinstance(action, FollowAction):
             logging.debug(f"Round {len(self.round_history)}: {player_position.value} follows with {action.cardset}")
             lead_position, moves = self.round_history[-1]

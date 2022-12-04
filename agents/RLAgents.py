@@ -38,6 +38,7 @@ class DeepAgent(SJAgent):
         raise NotImplementedError
     
     def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
+        if not samples: return
         splits = int(len(samples) / self.batch_size)
         for subsamples in np.array_split(samples, max(1, splits), axis=0):
             *args, rewards = self.prepare_batch_inputs(subsamples)
@@ -184,7 +185,7 @@ class KittyArgmaxAgent(DeepAgent):
         
         if epsilon and random.random() < epsilon:
             exploit = False
-            scores = torch.rand(33)
+            scores = torch.rand(33, device=x_batch.device)
         else:
             exploit = True
             scores = self.eval_model.forward(x_batch, action_batch).squeeze()
@@ -204,7 +205,7 @@ class KittyArgmaxAgent(DeepAgent):
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, PlaceAllKittyAction, float]]):
         state_batch = torch.zeros((len(samples), 172))
         action_batch = torch.zeros((len(samples), 33), dtype=torch.long)
-        logits = torch.zeros((len(samples), 33))
+        rewards = torch.zeros((len(samples), 8)) # Only provide rewards for 8 chosen cards. 0 = bad choice, 1 = good choice
         for i, (obs, ac, rw) in enumerate(samples):
             # TODO: get (33,) reward
             state_tensor = torch.cat([
@@ -243,17 +244,21 @@ class KittyArgmaxAgent(DeepAgent):
             # else:
             #     new_dist[chosen_indices] = old_dist[chosen_indices] / (-rw + 1)
             #     new_dist[~chosen_indices] = old_dist[~chosen_indices] + torch.sum(old_dist[chosen_indices]) * -rw / (-rw + 1) / 25
-
-            logits[i][chosen_indices] = rw
+            rewards[i] = 0 if rw < 0 else 1
         device = next(self.model.parameters()).device
-        return state_batch.to(device), action_batch.to(device), logits.to(device)
+        return state_batch.to(device), action_batch.to(device), rewards.to(device)
     
     def learn_from_samples(self, samples: List[Tuple[Observation, PlaceAllKittyAction, float]]):
         splits = int(len(samples) / self.batch_size)
         for subsamples in np.array_split(samples, max(1, splits), axis=0):
             state, action, rewards = self.prepare_batch_inputs(subsamples)
             pred_dist = self.model(state, action)
-            loss = -(pred_dist * rewards).sum(-1).mean()
+            chosen_scores = torch.topk(pred_dist, 8).values
+
+            # loss = -(pred_dist * rewards).sum(-1).mean()
+
+            # negative log likelihood: -(y·log(y) + (1-y)·log(1-y))
+            loss = -(rewards * torch.log(chosen_scores) + (1 - rewards) * torch.log(1 - chosen_scores)).mean()
             self.optimizer.zero_grad()
             loss.backward()
             if torch.isnan(loss):

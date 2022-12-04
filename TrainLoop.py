@@ -13,14 +13,14 @@ import numpy as np
 from networks.StateAutoEncoder import StateAutoEncoder
 
 ctx = torch.multiprocessing.get_context('spawn')
-global_main_queue = ctx.Queue(maxsize=50)
-global_chaodi_queue = ctx.Queue(maxsize=50)
-global_declare_queue = ctx.Queue(maxsize=50)
-global_kitty_queue = ctx.Queue(maxsize=50)
+global_main_queue = ctx.Queue(maxsize=30)
+global_chaodi_queue = ctx.Queue(maxsize=30)
+global_declare_queue = ctx.Queue(maxsize=30)
+global_kitty_queue = ctx.Queue(maxsize=30)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_prob=0):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_prob=0, warmup_games=0, tutorial_prob=0.0):
     train_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
@@ -28,7 +28,9 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
         chaodi_agent=chaodi_agent,
         enable_combos=combos,
         discount=discount,
-        epsilon=0.2
+        epsilon=0.2,
+        warmup_games=warmup_games,
+        tutorial_prob=tutorial_prob
     )
     while True:
         local_main, local_declare, local_kitty, local_chaodi = [], [], [], []
@@ -82,7 +84,7 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
     exit(0)
 
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_old_deck_prob=0.0):
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_old_deck_prob=0.0, warmup_games=0, tutorial_prob=0.0):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -198,8 +200,9 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     else:
         logging.getLogger().setLevel(logging.WARN)
     
-    with open(f'{model_folder}/command.txt', mode='w') as f:
-        f.write(' '.join(sys.argv))
+    if not eval_only:
+        with open(f'{model_folder}/command.txt', mode='w') as f:
+            f.write(' '.join(sys.argv))
     
     stats = []
     iterations = 0
@@ -225,18 +228,22 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
     
     if not eval_only:
-        for i in range(1 if single_process else 10):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_old_deck_prob))
+        processes_count = 10
+        for i in range(1 if single_process else processes_count):
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_old_deck_prob, warmup_games // processes_count, tutorial_prob))
             actor.start()
             actor_processes.append(actor)
             
             print(f"Spawned process {i}")
+        
+        if warmup_games > 0:
+            print(f"Starting with {warmup_games // processes_count * processes_count} warmup games...")
     
   
     while True:
         if not eval_only:
             print(f"Training iterations {iterations * games}-{(iterations+1) * games}...")
-            for _ in tqdm.tqdm(range(0, games, 10)):
+            for _ in tqdm.tqdm(range(0, games, processes_count)):
                 # print('wait', global_main_queue.qsize(), global_declare_queue.qsize(), global_kitty_queue.qsize(), global_chaodi_queue.qsize())
                 declare_batch = global_declare_queue.get()
                 kitty_batch = global_kitty_queue.get()
@@ -391,6 +398,8 @@ if __name__ == '__main__':
     parser.add_argument('--kitty-agent', type=str, default='fc', choices=['fc', 'argmax', 'rnn', 'lstm'])
     parser.add_argument('--eval-agent', type=str, default='random', choices=['random', 'interactive'])
     parser.add_argument('--learn-from-eval', action='store_true')
-    parser.add_argument('--reuse_old_deck_prob', type=float, default=0)
+    parser.add_argument('--reuse-old-deck-prob', type=float, default=0)
+    parser.add_argument('--warmup-games', type=int, default=0)
+    parser.add_argument('--tutorial-prob', type=float, default=0.0)
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_old_deck_prob)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_old_deck_prob, args.warmup_games, args.tutorial_prob)
