@@ -49,7 +49,15 @@ class PlaceKittyAction(Action):
     def tensor(self) -> torch.Tensor:
         "Shape: (1,)"
         return torch.tensor(ORDERING_INDEX[self.card])
-        
+
+class PlaceAllKittyAction(Action):
+    "Chooses 8 cards to discard."
+    def __init__(self, cardset: CardSet, dist: torch.Tensor, explore=False) -> None:
+        self.cards = cardset
+        self.dist = dist
+        self.explore = explore
+    def __repr__(self) -> str:
+        return f"Discard({self.cards})"
 
 class ChaodiAction(Action):
     "Changes trump suite and swap cards with the kitty."
