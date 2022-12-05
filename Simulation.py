@@ -190,13 +190,10 @@ class Simulation:
                         # For kitty action, the reward is not discounted because each move is equally important
                         for i in reversed(range(len(self._kitty_history_per_player[position]))):
                             ob, ac, rw = self._kitty_history_per_player[position][i]
-                            if i + 1 == len(self._kitty_history_per_player[position]):
-                                if is_defender(ob.position):
-                                    rw += self.game_engine.final_defender_reward
-                                else:
-                                    rw += self.game_engine.final_opponent_reward
+                            if is_defender(ob.position):
+                                rw += self.game_engine.final_defender_reward
                             else:
-                                rw += self.discount * self._kitty_history_per_player[position][i + 1][2]
+                                rw += self.game_engine.final_opponent_reward
                             self.kitty_history.append((ob, ac, rw))
                         self._kitty_history_per_player[position].clear()
                     else:
