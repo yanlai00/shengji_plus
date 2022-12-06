@@ -6,7 +6,7 @@ import shutil
 from torch.multiprocessing import Process, Lock, Queue
 import torch, os
 from Simulation import Simulation
-from agents.Agent import InteractiveAgent, RandomAgent
+from agents.Agent import InteractiveAgent, RandomAgent, StrategicAgent
 from agents.RLAgents import *
 import argparse
 import tqdm
@@ -21,7 +21,7 @@ global_kitty_queue = ctx.Queue(maxsize=30)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_prob=0, warmup_games=0, tutorial_prob=0.0):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_prob=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0):
     train_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
@@ -31,7 +31,8 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
         discount=discount,
         epsilon=0.2,
         warmup_games=warmup_games,
-        tutorial_prob=tutorial_prob
+        tutorial_prob=tutorial_prob,
+        oracle_duration=oracle_duration
     )
     while True:
         local_main, local_declare, local_kitty, local_chaodi = [], [], [], []
@@ -85,7 +86,7 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
     exit(0)
 
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_old_deck_prob=0.0, warmup_games=0, tutorial_prob=0.0):
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_old_deck_prob=0.0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -143,8 +144,10 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         chaodi_model.load_state_dict(torch.load(f'{model_folder}/chaodi.pt', map_location=device), strict=False)
         print("Using loaded model for chaodi")
     chaodi_agent = ChaodiAgent('chaodi', chaodi_model, tau=tau)
-
-    main_model = train_models.MainModel().to(device)
+    try:
+        main_model = train_models.MainModel(use_oracle=oracle_duration > 0).to(device)
+    except:
+        main_model = train_models.MainModel().to(device)
     if os.path.exists(f'{model_folder}/main.pt'):
         main_model.load_state_dict(torch.load(f'{model_folder}/main.pt', map_location=device), strict=False)
         print("Using loaded model for main game")
@@ -167,7 +170,10 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
 
     eval_main, eval_kitty, eval_chaodi, eval_declare = None, None, None, None
     if compare:
-        eval_models = importlib.import_module(f'{compare}.Models'.replace('/', '.'))
+        try:
+            eval_models = importlib.import_module(f'{compare}.Models'.replace('/', '.'))
+        except:
+            eval_models = importlib.import_module("networks.Models")
         eval_main_model = eval_models.MainModel().to(device)
         eval_main_model.load_state_dict(torch.load(f'{compare}/main.pt', map_location=device), strict=False)
 
@@ -237,7 +243,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if not eval_only:
         processes_count = 10
         for i in range(1 if single_process else processes_count):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_old_deck_prob, warmup_games // processes_count, tutorial_prob))
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_old_deck_prob, warmup_games // processes_count, tutorial_prob, oracle_duration // processes_count))
             actor.start()
             actor_processes.append(actor)
             
@@ -285,6 +291,8 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         print("Evaluating model performance...")
         if eval_agent_type == 'random':
             eval_agent = RandomAgent('random')
+        elif eval_agent_type == 'strategic':
+            eval_agent = StrategicAgent('strategic')
         else:
             eval_agent = InteractiveAgent('interactive')
         if single_process:
@@ -308,7 +316,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             level_counts = eval_sim.level_counts
             opposition_points = eval_sim.opposition_points
         else:
-            eval_count = 6
+            eval_count = 5 if not eval_only else 12
             eval_size = max(1, eval_size // eval_count * eval_count) # Must be multiple of eval_count
             win_counts = [0, 0] # Defenders, opponents
             level_counts = [0, 0]
@@ -378,7 +386,8 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
                     'kitty_optim_state': kitty_agent.optimizer.state_dict(),
                     'chaodi_optim_state': chaodi_agent.optimizer.state_dict(),
                     'hash_model_optim_state': hash_autoencoder.optimizer.state_dict() if hash_autoencoder else None,
-                    'value_optim_state': main_agent.value_optimizer.state_dict() if isinstance(main_agent, QLearningMainAgent) else None
+                    'value_optim_state': main_agent.value_optimizer.state_dict() if isinstance(main_agent, QLearningMainAgent) else None,
+                    'oracle_duration': oracle_duration
                 }, f)
         else:
             break
@@ -403,10 +412,11 @@ if __name__ == '__main__':
     parser.add_argument('--hash-length', type=int, default=16)
     parser.add_argument('--tau', type=float, default=0.1)
     parser.add_argument('--kitty-agent', type=str, default='fc', choices=['fc', 'argmax', 'rnn', 'lstm'])
-    parser.add_argument('--eval-agent', type=str, default='random', choices=['random', 'interactive'])
+    parser.add_argument('--eval-agent', type=str, default='random', choices=['random', 'interactive', 'strategic'])
     parser.add_argument('--learn-from-eval', action='store_true')
     parser.add_argument('--reuse-old-deck-prob', type=float, default=0)
     parser.add_argument('--warmup-games', type=int, default=0)
     parser.add_argument('--tutorial-prob', type=float, default=0.0)
+    parser.add_argument('--oracle-duration', type=int, default=0)
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_old_deck_prob, args.warmup_games, args.tutorial_prob)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_old_deck_prob, args.warmup_games, args.tutorial_prob, args.oracle_duration)

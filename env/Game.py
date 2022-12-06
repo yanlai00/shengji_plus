@@ -11,7 +11,7 @@ from .CardSet import CardSet, MoveType
 import logging
 
 class Game:
-    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, tutorial_prob=0.0) -> None:
+    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, tutorial_prob=0.0, oracle_value=0.0) -> None:
         # Player information
         self.hands = {
             AbsolutePosition.NORTH: CardSet(),
@@ -65,6 +65,7 @@ class Game:
 
         self.draw_order = []
         self.is_warmup_game = is_warmup_game # In a warm up game, we don't allow declarations for fairness
+        self.oracle_value = oracle_value # the coefficient for the oracle
 
     @property
     def dominant_suite(self):
@@ -124,7 +125,7 @@ class Game:
         assert actions, f"Agent {position} has no action to choose from!"
 
         observation = Observation(
-            hand = self.hands[position],
+            hand = self.hands[position].copy(),
             position = position,
             actions = actions,
             stage = self.stage,
@@ -135,14 +136,18 @@ class Game:
             defender_points = self.opponent_points,
             opponent_points = self.opponent_points,
             round_history = [(p.relative_to(position), cards) for p, cards in self.round_history],
-            unplayed_cards = self.unplayed_cards,
+            unplayed_cards = self.unplayed_cards.copy(),
             leads_current_trick = self.round_history[-1][0] == position if self.round_history else position == self.dealer_position,
             chaodi_times = self.chaodi_times,
-            kitty = self.kitty if (self.declarations and position == self.declarations[-1].absolute_position) or (not self.declarations and self.dealer_position == position) else None,
+            kitty = self.kitty.copy() if (self.declarations and position == self.declarations[-1].absolute_position) or (not self.declarations and self.dealer_position == position) else None,
             is_chaodi_turn = self.current_chaodi_turn == position,
-            perceived_left = self.public_cards[position.last_position],
-            perceived_right = self.public_cards[position.next_position],
-            perceived_opposite = self.public_cards[position.next_position.next_position],
+            perceived_left = self.public_cards[position.last_position].copy(),
+            perceived_right = self.public_cards[position.next_position].copy(),
+            perceived_opposite = self.public_cards[position.next_position.next_position].copy(),
+            actual_left=self.hands[position.last_position].copy(),
+            actual_right=self.hands[position.next_position].copy(),
+            actual_opposite=self.hands[position.next_position.next_position].copy(),
+            oracle_value=self.oracle_value
         )
 
         return observation

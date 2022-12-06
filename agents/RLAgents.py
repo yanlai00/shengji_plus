@@ -20,7 +20,7 @@ from env.Observation import Observation
 from networks.Models import *
 
 class DeepAgent(SJAgent):
-    def __init__(self, name: str, model: nn.Module, batch_size=64, hash_model: StateAutoEncoder = None, tau=0.1) -> None:
+    def __init__(self, name: str, model: nn.Module, batch_size=64, hash_model: StateAutoEncoder = None, tau=0.1, use_oracle=False) -> None:
         super().__init__(name)
 
         self.model = model
@@ -33,6 +33,7 @@ class DeepAgent(SJAgent):
         self.hash_loss_history: List[float] = []
         self.hash_model = hash_model
         self.tau = tau
+        self.use_oracle = use_oracle
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
         raise NotImplementedError
@@ -80,6 +81,7 @@ class DeclareAgent(DeepAgent):
             return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         elif epsilon and random.random() < epsilon:
             return random.choice(obs.actions)
+            # return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         else:
             return max(obs.actions, key=reward)
     
@@ -115,6 +117,7 @@ class KittyAgent(DeepAgent):
             return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         elif epsilon and random.random() < epsilon:
             return random.choice(obs.actions)
+            # return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         else:
             return max(obs.actions, key=reward)
     
@@ -289,6 +292,7 @@ class ChaodiAgent(DeepAgent):
             return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         elif epsilon and random.random() < epsilon:
             return random.choice(obs.actions)
+            # return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         else:
             return max(obs.actions, key=reward)
     
@@ -311,8 +315,8 @@ class ChaodiAgent(DeepAgent):
      
     
 class MainAgent(DeepAgent):
-    def __init__(self, name: str, model: MainModel, batch_size=64, hash_model: StateAutoEncoder = None, tau=0.995) -> None:
-        super().__init__(name, model, batch_size, hash_model, tau)
+    def __init__(self, name: str, model: MainModel, batch_size=64, hash_model: StateAutoEncoder = None, tau=0.1) -> None:
+        super().__init__(name, model, batch_size, hash_model, tau, use_oracle=getattr(model, 'use_oracle', False))
         self.model: MainModel
     
     def act(self, obs: Observation, explore=False, epsilon=None, training=True):
@@ -328,19 +332,22 @@ class MainAgent(DeepAgent):
             return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         elif epsilon and random.random() < epsilon:
             return random.choice(obs.actions)
+            # return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
         else:
             return max(obs.actions, key=reward)
     
     def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]]):
-        x_batch = torch.zeros((len(samples), 1196 - 3 * 108 + 1))
+        if self.use_oracle:
+            x_batch = torch.zeros((len(samples), 1089 + 108)) # additionally provide other players' hands
+        else:
+            x_batch = torch.zeros((len(samples), 1089 - 2 * 108))
         history_batch = torch.zeros((len(samples), 15, 436)) # Store up to last 15 rounds of history
         gt_rewards = torch.zeros((len(samples), 1))
         for i, (obs, ac, rw, _) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_dynamic_tensor # obs.historical_moves_tensor
             cardset = ac.move.cardset if isinstance(ac, LeadAction) else ac.cardset
             state_tensor = torch.cat([
-                # obs.perceived_cardsets, # (432,)
-                obs.dynamic_hand_tensor, # obs.hand.tensor,
+                obs.dynamic_hand_tensor, # (108,),
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)
@@ -352,6 +359,10 @@ class MainAgent(DeepAgent):
                 # obs.current_dominating_player_index, # (3,)
                 obs.dominates_all_tensor(cardset), # (1,)
             ])
+
+            if self.use_oracle:
+                state_tensor = torch.cat([obs.oracle_cardsets, state_tensor])
+
             x_batch[i] = torch.cat([state_tensor, ac.tensor])
             history_batch[i] = historical_moves
             gt_rewards[i] = rw

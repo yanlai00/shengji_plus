@@ -11,11 +11,13 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False, warmup_games=0, tutorial_prob=0.0) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False, warmup_games=0, tutorial_prob=0.0, oracle_duration=0) -> None:
         "If eval = True, use random agents for East and West."
 
         self.remaining_warmup_games = warmup_games
         self.tutorial_prob = tutorial_prob
+        self.oracle_duration = oracle_duration
+        self.game_count = 0
 
         self.main_agent = main_agent
         self.declare_agent = declare_agent
@@ -28,14 +30,16 @@ class Simulation:
                 dealer_position=None,
                 enable_chaodi=chaodi_agent is not None,
                 enable_combos=False,
-                is_warmup_game=True
+                is_warmup_game=True,
+                oracle_value=self.oracle_value
             )
         else:
             self.game_engine = Game(
                 dominant_rank=random.randint(2, 14),
                 dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
                 enable_chaodi=chaodi_agent is not None,
-                enable_combos=enable_combos
+                enable_combos=enable_combos,
+                oracle_value=self.oracle_value
             )
 
         self.current_player = None
@@ -190,10 +194,13 @@ class Simulation:
                         # For kitty action, the reward is not discounted because each move is equally important
                         for i in reversed(range(len(self._kitty_history_per_player[position]))):
                             ob, ac, rw = self._kitty_history_per_player[position][i]
-                            if is_defender(ob.position):
-                                rw += self.game_engine.final_defender_reward
+                            if i + 1 == len(self._kitty_history_per_player[position]):
+                                if is_defender(ob.position):
+                                    rw += self.game_engine.final_defender_reward
+                                else:
+                                    rw += self.game_engine.final_opponent_reward
                             else:
-                                rw += self.game_engine.final_opponent_reward
+                                rw += self._kitty_history_per_player[position][i + 1][2]
                             self.kitty_history.append((ob, ac, rw))
                         self._kitty_history_per_player[position].clear()
                     else:
@@ -258,8 +265,15 @@ class Simulation:
 
             return True, action
         else:
+            self.game_count += 1
             return False, None
 
+    @property
+    def oracle_value(self):
+        if self.oracle_duration == 0:
+            return 0.0
+        else:
+            return max(0, (self.oracle_duration - self.game_count) / self.oracle_duration)
     
     def reset(self, reuse_old_deck=False):
         old_deck = self.game_engine.card_list
@@ -271,7 +285,8 @@ class Simulation:
                 dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
                 enable_chaodi=self.game_engine.enable_chaodi,
                 enable_combos=False,
-                is_warmup_game=True
+                is_warmup_game=True,
+                oracle_value=self.oracle_value
             )
         else:
             self.game_engine = Game(
@@ -279,7 +294,8 @@ class Simulation:
                 dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
                 enable_chaodi=self.game_engine.enable_chaodi,
                 enable_combos=self.game_engine.enable_combos,
-                tutorial_prob=self.tutorial_prob
+                tutorial_prob=self.tutorial_prob,
+                oracle_value=self.oracle_value
             )
         self.main_history.clear()
         self.declaration_history.clear()

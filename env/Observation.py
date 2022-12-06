@@ -7,8 +7,8 @@ from env.utils import LETTER_RANK, AbsolutePosition, Declaration, RelativePositi
 import torch
 
 class Observation:
-    def __init__(self, hand: CardSet, position: AbsolutePosition, actions: List[Action], stage: Stage, dominant_rank: int, declaration: Declaration, next_declaration_turn: RelativePosition, dealer_position: RelativePosition, defender_points: int, opponent_points: int, round_history: List[Tuple[RelativePosition, List[CardSet]]], unplayed_cards: CardSet, leads_current_trick: bool, chaodi_times: List[int], kitty: CardSet = None, is_chaodi_turn = False, perceived_left = CardSet(), perceived_right = CardSet(), perceived_opposite = CardSet()) -> None:
-        self.hand = hand.copy()
+    def __init__(self, hand: CardSet, position: AbsolutePosition, actions: List[Action], stage: Stage, dominant_rank: int, declaration: Declaration, next_declaration_turn: RelativePosition, dealer_position: RelativePosition, defender_points: int, opponent_points: int, round_history: List[Tuple[RelativePosition, List[CardSet]]], unplayed_cards: CardSet, leads_current_trick: bool, chaodi_times: List[int], kitty: CardSet = None, is_chaodi_turn = False, perceived_left = CardSet(), perceived_right = CardSet(), perceived_opposite = CardSet(), actual_left = CardSet(), actual_right = CardSet(), actual_opposite = CardSet(), oracle_value=0.0) -> None:
+        self.hand = hand
         self.position = position
         self.actions = actions
         self.stage = stage
@@ -19,16 +19,19 @@ class Observation:
         self.defender_points = defender_points
         self.opponent_points = opponent_points
         self.round_history = round_history
-        self.unplayed_cards = unplayed_cards.copy()
+        self.unplayed_cards = unplayed_cards
         self.leads_current_round = leads_current_trick # If the player is going to lead the next trick
         self.chaodi_times = chaodi_times
         self.kitty = kitty # Only observable to the last person who placed the kitty. In chaodi mode, this might not be the dealer.
-        self.perceived_left = perceived_left.copy()
-        self.perceived_right = perceived_right.copy()
-        self.perceived_opposite = perceived_opposite.copy()
+        self.perceived_left = perceived_left
+        self.perceived_right = perceived_right
+        self.perceived_opposite = perceived_opposite
+        self.actual_left = actual_left
+        self.actual_right = actual_right
+        self.actual_opposite = actual_opposite
 
-        self.historical_rounds = 10 # TODO
-
+        self.historical_rounds = 14 # TODO
+        self.oracle_value = oracle_value # Bernoulli variable parameter
         self.is_chaodi_turn = is_chaodi_turn
 
     def __repr__(self) -> str:
@@ -116,8 +119,15 @@ class Observation:
     @property
     def perceived_cardsets(self):
         "Returns the cards for each player from the current player's perspective, starting from themselves going anti-clickwise. Shape: (432,)"
-        return torch.cat([self.hand.tensor, self.perceived_right.tensor, self.perceived_opposite.tensor, self.perceived_left.tensor])
+        return torch.cat([self.perceived_right.tensor, self.perceived_opposite.tensor, self.perceived_left.tensor])
     
+    @property
+    def oracle_cardsets(self):
+        perfect_info = torch.cat([self.actual_right.tensor, self.actual_opposite.tensor, self.actual_left.tensor])
+        # Mask using Bernoulli random variables
+        mask = torch.bernoulli(torch.ones_like(perfect_info) * self.oracle_value)
+        return torch.maximum(perfect_info * mask, self.perceived_cardsets)
+
     @property
     def perceived_trump_cardsets(self):
         "Return a (36,) tensor describing the dominant rank trump cards each player is known to have."

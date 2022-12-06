@@ -3,6 +3,8 @@ import random
 import unittest
 import sys
 import torch
+import tqdm
+import numpy as np
 
 sys.path.append('.')
 from agents.RLAgents import ChaodiAgent, DeclareAgent, KittyAgent, MainAgent
@@ -79,8 +81,7 @@ class TestGame(unittest.TestCase):
             main_agent=MainAgent('Main', main_model),
             declare_agent=DeclareAgent('Declare', declare_model),
             kitty_agent=KittyAgent('Kitty', kitty_model),
-            chaodi_agent=ChaodiAgent('Chaodi', chaodi_model),
-            baseline=StrategicAgent('s')
+            chaodi_agent=ChaodiAgent('Chaodi', chaodi_model)
         )
 
         logging.getLogger().setLevel(logging.DEBUG)
@@ -91,6 +92,43 @@ class TestGame(unittest.TestCase):
         sim.reset()
 
         while sim.step()[0]: pass
+    
+    def strategic_vs_random(self):
+        "Tests how much better the StrategicAgent is relative to the RandomAgent."
+
+        random.seed(101)
+
+        random_agent = RandomAgent("random")
+        strategic_agent = StrategicAgent("strategic")
+        sim = Simulation(
+            strategic_agent, strategic_agent, strategic_agent, strategic_agent,
+            eval=True,
+            eval_main=random_agent,
+            eval_declare=random_agent,
+            eval_kitty=random_agent,
+            eval_chaodi=random_agent,
+            enable_combos=False
+        )
+        
+        # stats
+        wins = [0, 0]
+        level_counts = [0, 0]
+        points = [[], []]
+
+        for _ in tqdm.tqdm(range(1000)):
+            while sim.step()[0]: pass # Play a game
+            opponent_index = int(sim.game_engine.dealer_position in ['N', 'S'])
+            opponents_won = sim.game_engine.opponent_points >= 80
+            win_index = int(opponents_won) if opponent_index == 1 else (1 - opponents_won)
+            wins[win_index] += 1
+            level_counts[win_index] += abs(sim.game_engine.final_defender_reward)
+            points[opponent_index].append(sim.game_engine.opponent_points)
+
+            sim.reset()
+        
+        print('Wins:', wins)
+        print('Level count:', level_counts)
+        print(np.mean(points[0]), np.mean(points[1]))
 
 
 

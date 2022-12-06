@@ -153,11 +153,15 @@ class MainModel(nn.Module):
         - Cards played in the current round by every other player, and the position of the player that is leading the round
         - Kitty (if the player is the last to place the kitty), shape (108,)
     """
-    def __init__(self) -> None:
+    def __init__(self, use_oracle=False) -> None:
         super().__init__()
 
+        self.use_oracle = use_oracle
         self.lstm = nn.LSTM(436, 256, batch_first=True)
-        self.fc1 = nn.Linear(1196 - 3 * 108 + 256 + 1, 768)
+        if use_oracle:
+            self.fc1 = nn.Linear(1197 + 256, 768)
+        else:
+            self.fc1 = nn.Linear(1197 - 3 * 108 + 256, 768)
         self.fc2 = nn.Linear(768, 512)
         self.fc_rest = nn.Sequential(
             nn.Linear(512, 512),
