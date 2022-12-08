@@ -205,10 +205,10 @@ class Game:
             assert self.kitty.size < 8, "Kitty already has 8 cards"
 
             suite_count_before = 0
-            for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE]:
+            for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
                 if self.hands[player_position].count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
                     suite_count_before += 1
-            trump_count_before = self.hands[player_position].count_suite(CardSuite.TRUMP, self.dominant_suite, self.dominant_rank)
+            trump_count_before = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suite, self.dominant_rank)
 
             self.kitty.add_card(action.card)
             self.hands[player_position].remove_card(action.card)
@@ -216,14 +216,16 @@ class Game:
 
             suite_count_after = 0
             trump_count_after = 0
-            for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE]:
+            for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
                 if self.hands[player_position].count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
                     suite_count_after += 1
-            trump_count_after = self.hands[player_position].count_suite(CardSuite.TRUMP, self.dominant_suite, self.dominant_rank)
+            trump_count_after = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suite, self.dominant_rank)
             
-            reward = 0.1 * (suite_count_before - suite_count_after) # Encourage players to get rid of a suite completely
+            reward = 0.2 * (suite_count_before - suite_count_after) # Encourage players to get rid of a suite completely
             if trump_count_after < trump_count_before:
-                reward -= 0.2 # Discourage players from discarding trump cards
+                reward -= 0.5 # Discourage players from discarding trump cards
+            if get_rank(action.card, self.dominant_suite, self.dominant_rank) >= 15:
+                reward -= 1 # Highly discourage players from discarding dominant rank cards or jokers
             if self.kitty.size == 8:
                 if not self.round_history:
                     self.round_history.append((player_position, []))

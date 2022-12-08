@@ -89,6 +89,9 @@ class LeadAction(Action):
     def tensor(self) -> torch.Tensor:
         "Shape: (108,)"
         return self.move.cardset.tensor
+    
+    def dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+        return self.move.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)
 
 class FollowAction(Action):
     "Follow the pattern of a previous player. Everyone except the first player in a trick will need to follow the pattern."
@@ -100,3 +103,6 @@ class FollowAction(Action):
     def tensor(self) -> torch.Tensor:
         "Shape: (108,)"
         return self.cardset.tensor
+    
+    def dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+        return self.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)

@@ -363,7 +363,7 @@ class MainAgent(DeepAgent):
             if self.use_oracle:
                 state_tensor = torch.cat([obs.oracle_cardsets, state_tensor])
 
-            x_batch[i] = torch.cat([state_tensor, ac.tensor])
+            x_batch[i] = torch.cat([state_tensor, ac.dynamic_tensor(obs.dominant_suit, obs.dominant_rank)])
             history_batch[i] = historical_moves
             gt_rewards[i] = rw
         device = next(self.model.parameters()).device

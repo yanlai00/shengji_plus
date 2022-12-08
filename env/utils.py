@@ -33,7 +33,7 @@ class TrumpSuite(str, Enum):
         assert tensor.shape[0] == 6 and torch.sum(tensor == 1) == 1 and tensor.sum() == 1, "tensor must be one hot encoded"
         return [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.XJ, self.DJ][tensor.argmax()]
 
-class CardSuite(str, Enum):
+class CardSuit(str, Enum):
     "All suites that a card can belong to in a game."
     CLUB = "♣"
     SPADE = "♠"
@@ -143,13 +143,13 @@ NUMERIC_RANK = {v:k for k,v in LETTER_RANK.items()}
 def get_suite(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
     "Determines if the card is a trump card, and if not, determines which suite it is in."
     if card == 'XJ' or card == 'DJ':
-        return CardSuite.TRUMP
+        return CardSuit.TRUMP
     
     rank = NUMERIC_RANK[card[:-1]]
-    suite = CardSuite(card[-1])
+    suite = CardSuit(card[-1])
     
     if rank == dominant_rank or suite == dominant_suite:
-        return CardSuite.TRUMP
+        return CardSuit.TRUMP
     else:
         return suite
 
@@ -161,7 +161,7 @@ def get_rank(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
     elif card == 'XJ':
         return 17
     else:
-        suite = CardSuite(card[-1])
+        suite = CardSuit(card[-1])
         rank = NUMERIC_RANK[card[:-1]]
         if rank == dominant_rank and (suite == dominant_suite or dominant_suite.is_NT):
             return 16

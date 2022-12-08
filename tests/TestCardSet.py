@@ -3,7 +3,7 @@ import sys
 import random
 
 sys.path.append('.')
-from env.utils import CardSuite, TrumpSuite
+from env.utils import CardSuit, TrumpSuite
 from env.CardSet import CardSet, MoveType
 
 class TestCardSet(unittest.TestCase):
@@ -106,10 +106,10 @@ class TestCardSet(unittest.TestCase):
     
     def test_count_suite(self):
         # for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE, CardSuite.TRUMP]:
-        self.assertEqual(self.cardset_simple.count_suite(CardSuite.TRUMP, TrumpSuite.HEART, 3), 10)
-        self.assertEqual(self.cardset_simple.count_suite(CardSuite.HEART, TrumpSuite.HEART, 3), 0) # Since HEART is trump, there is no card in the HEART category, since they would all be trump cards
-        self.assertEqual(self.cardset_simple.count_suite(CardSuite.DIAMOND, TrumpSuite.HEART, 3), 4) # 3s are trump cards, not diamond cards
-        self.assertEqual(self.cardset_simple.count_suite(CardSuite.HEART, TrumpSuite.DJ, 3), 4)
+        self.assertEqual(self.cardset_simple.count_suite(CardSuit.TRUMP, TrumpSuite.HEART, 3), 10)
+        self.assertEqual(self.cardset_simple.count_suite(CardSuit.HEART, TrumpSuite.HEART, 3), 0) # Since HEART is trump, there is no card in the HEART category, since they would all be trump cards
+        self.assertEqual(self.cardset_simple.count_suite(CardSuit.DIAMOND, TrumpSuite.HEART, 3), 4) # 3s are trump cards, not diamond cards
+        self.assertEqual(self.cardset_simple.count_suite(CardSuit.HEART, TrumpSuite.DJ, 3), 4)
 
     def test_matching_moves_single(self):
         # Analysis: 5♥ is a trump card in this situation, so the player's action set contains all single trump cards.
@@ -365,20 +365,20 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.XJ.tensor), TrumpSuite.XJ)
         self.assertEqual(TrumpSuite.from_tensor(TrumpSuite.DJ.tensor), TrumpSuite.DJ)
     
-    def test_create_cardset_from_hands(self):
-        deck1 = CardSet.make_tutorial_deck1()
-        deck1.reverse()
-        hands = [CardSet(), CardSet(), CardSet(), CardSet()]
-        kitty = CardSet()
-        for _ in range(25):
-            for i in range(4):
-                hands[i].add_card(deck1.pop())
-        for _ in range(8):
-            kitty.add_card(deck1.pop())
+    def test_dynamic_tensor(self):
+        full_deck, order = CardSet.new_deck()
+
+        for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.XJ, TrumpSuite.DJ]:
+            for rank in range(2, 15):
+                self.assertEqual(CardSet.from_dynamic_tensor(full_deck.get_dynamic_tensor(suit, rank), suit, rank), full_deck)
         
-        for h in hands:
-            print(h)
-        print(kitty)
+        half_deck = CardSet()
+        for card in order[:28]:
+            half_deck.add_card(card)
+        
+        for suit in [TrumpSuite.HEART, TrumpSuite.SPADE, TrumpSuite.XJ, TrumpSuite.DJ]:
+            for rank in range(2, 15):
+                self.assertEqual(CardSet.from_dynamic_tensor(half_deck.get_dynamic_tensor(suit, rank), suit, rank), half_deck)
 
 if __name__ == '__main__':
     unittest.main()

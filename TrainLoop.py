@@ -172,9 +172,14 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if compare:
         try:
             eval_models = importlib.import_module(f'{compare}.Models'.replace('/', '.'))
+            with open(f'{compare}/state.pkl', mode='rb') as f:
+                eval_state = pickle.load(f)
         except:
             eval_models = importlib.import_module("networks.Models")
-        eval_main_model = eval_models.MainModel().to(device)
+        try:
+            eval_main_model = eval_models.MainModel(use_oracle=eval_state['oracle_duration'] > 0).to(device)
+        except:
+            eval_main_model = eval_models.MainModel().to(device)
         eval_main_model.load_state_dict(torch.load(f'{compare}/main.pt', map_location=device), strict=False)
 
         if os.path.exists(f'{compare}/value.pt'):

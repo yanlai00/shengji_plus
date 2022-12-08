@@ -119,11 +119,20 @@ class Observation:
     @property
     def perceived_cardsets(self):
         "Returns the cards for each player from the current player's perspective, starting from themselves going anti-clickwise. Shape: (432,)"
-        return torch.cat([self.perceived_right.tensor, self.perceived_opposite.tensor, self.perceived_left.tensor])
+        # Note: compatibility issues with legacy models
+        return torch.cat([
+            self.perceived_right.get_dynamic_tensor(self.dominant_suit, self.dominant_rank),
+            self.perceived_opposite.get_dynamic_tensor(self.dominant_suit, self.dominant_rank),
+            self.perceived_left.get_dynamic_tensor(self.dominant_suit, self.dominant_rank)
+        ])
     
     @property
     def oracle_cardsets(self):
-        perfect_info = torch.cat([self.actual_right.tensor, self.actual_opposite.tensor, self.actual_left.tensor])
+        perfect_info = torch.cat([
+            self.actual_right.get_dynamic_tensor(self.dominant_suit, self.dominant_rank),
+            self.actual_opposite.get_dynamic_tensor(self.dominant_suit, self.dominant_rank),
+            self.actual_left.get_dynamic_tensor(self.dominant_suit, self.dominant_rank)
+        ])
         # Mask using Bernoulli random variables
         mask = torch.bernoulli(torch.ones_like(perfect_info) * self.oracle_value)
         return torch.maximum(perfect_info * mask, self.perceived_cardsets)
@@ -155,7 +164,7 @@ class Observation:
             current_player_index = position_order.index(pos)
             history_tensor[i, current_player_index] = 1
             for cardset in round:
-                history_tensor[i, 4 + 108 * current_player_index : 4 + 108 * (current_player_index + 1)] = cardset.tensor
+                history_tensor[i, 4 + 108 * current_player_index : 4 + 108 * (current_player_index + 1)] = cardset.get_dynamic_tensor(self.dominant_suit, self.dominant_rank)
                 current_player_index = (current_player_index + 1) % 4
         
         padded_history = torch.vstack([

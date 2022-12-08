@@ -6,7 +6,7 @@ from typing import Dict, List, Set, Tuple, Union
 import torch
 import itertools
 
-from env.utils import LETTER_RANK, ORDERING, CardSuite, TrumpSuite, get_rank, get_suite
+from env.utils import LETTER_RANK, ORDERING, CardSuit, TrumpSuite, get_rank, get_suite
 
 class MoveType:
     pass
@@ -20,7 +20,7 @@ class MoveType:
     @property
     def cardset(self) -> 'CardSet':
         return CardSet()
-    def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+    def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
         "Returns the suite of the move"
         raise NotImplementedError
         
@@ -36,7 +36,7 @@ class MoveType:
         @property
         def multiplier(self):
             return 2
-        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
             return get_suite(self.card, dominant_suite, dominant_rank)
 
     class Pair(MoveType):
@@ -50,7 +50,7 @@ class MoveType:
         @property
         def cardset(self):
             return CardSet({self.card: 2})
-        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
             return get_suite(self.card, dominant_suite, dominant_rank)
     
     class Tractor(MoveType):
@@ -65,7 +65,7 @@ class MoveType:
         @property
         def cardset(self):
             return self._cardset
-        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
             return get_suite(self._cardset.card_list()[0], dominant_suite, dominant_rank)
     
     class Combo(MoveType):
@@ -85,7 +85,7 @@ class MoveType:
         @property
         def cardset(self):
             return self._cardset
-        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuite:
+        def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
             return self.get_components(dominant_suite, dominant_rank)[0].suite(dominant_suite, dominant_rank)
 
     @classmethod
@@ -123,7 +123,7 @@ class CardSet:
     def has_card(self, card: str):
         return self._cards[card] > 0
     
-    def filter_by_suite(self, suite: CardSuite, dominant_suite: TrumpSuite, dominant_rank: int):
+    def filter_by_suite(self, suite: CardSuit, dominant_suite: TrumpSuite, dominant_rank: int):
         subset = CardSet()
         for card, count in self._cards.items():
             if count > 0 and get_suite(card, dominant_suite, dominant_rank) == suite:
@@ -134,7 +134,7 @@ class CardSet:
     def size(self):
         return self.__len__()
     
-    def count_suite(self, suite: CardSuite, dominant_suite: TrumpSuite, dominant_rank: int):
+    def count_suite(self, suite: CardSuit, dominant_suite: TrumpSuite, dominant_rank: int):
         "Count the total number of cards the set has in the given CardSuite."
         total_count = 0
         for card, count in self._cards.items():
@@ -219,14 +219,14 @@ class CardSet:
     def get_leading_moves(self, dominant_suite: TrumpSuite, dominant_rank: int, include_combos = False):
         "Return all possible move actions the player can make if they lead the trick."
         moves: List[MoveType] = []
-        suite_list = [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE, CardSuite.TRUMP]
+        suite_list = [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE, CardSuit.TRUMP]
         
         if include_combos:
             cards_by_suite = {suite: CardSet() for suite in suite_list}
             for card in self.card_list():
                 cards_by_suite[get_suite(card, dominant_suite, dominant_rank)].add_card(card)
             for suite, suite_cardset in cards_by_suite.items():
-                if suite == CardSuite.TRUMP: continue
+                if suite == CardSuit.TRUMP: continue
                 records = set()
                 for size in range(1, suite_cardset.size + 1):
                     for combo in itertools.combinations(suite_cardset.card_list(), size):
@@ -468,23 +468,23 @@ class CardSet:
             self_rank = get_rank(first_component.card, dominant_suite, dominant_rank)
             target_rank = get_rank(move.card, dominant_suite, dominant_rank)
             
-            if self_suite == target_suite and self_rank > target_rank or target_suite != CardSuite.TRUMP and self_suite == CardSuite.TRUMP:
+            if self_suite == target_suite and self_rank > target_rank or target_suite != CardSuit.TRUMP and self_suite == CardSuit.TRUMP:
                 return [first_component]
         elif isinstance(move, MoveType.Tractor):
             if type(first_component) != type(move) or first_component.cardset.size < move.cardset.size: return None # You must have a tractor of equal size to beat the move (your tractor can't be longer, because your move and the target move have the same # of cards)
 
             self_max_rank = max([get_rank(card, dominant_suite, dominant_rank) for card in self.card_list()])
             target_max_rank = max([get_rank(card, dominant_suite, dominant_rank) for card in move.cardset.card_list()])
-            if target_suite == CardSuite.TRUMP:
+            if target_suite == CardSuit.TRUMP:
                 # Both trump suite; compare largest rank
-                if self_suite == CardSuite.TRUMP and self_max_rank > target_max_rank:
+                if self_suite == CardSuit.TRUMP and self_max_rank > target_max_rank:
                     return [first_component]
             else:
                 # If you have the same suite, you need to be bigger. Or, any trump tractor dominates any non-trump tractor of the same length.
-                if self_suite == CardSuite.TRUMP or (self_suite == target_suite and self_max_rank > target_max_rank):
+                if self_suite == CardSuit.TRUMP or (self_suite == target_suite and self_max_rank > target_max_rank):
                     return [first_component]
         elif isinstance(move, MoveType.Combo):
-            if self_suite != CardSuite.TRUMP and self_suite != target_suite: return None
+            if self_suite != CardSuit.TRUMP and self_suite != target_suite: return None
 
             target_components = move.get_components(dominant_suite, dominant_rank)
             target_max_component = max(target_components, key=lambda c: c.cardset.size)
@@ -580,7 +580,7 @@ class CardSet:
             if config:
                 best_component: MoveType = max(config, key=key_fn)
                 # Add 100 to trump components so that they are definitely bigger than non-trump components.
-                ranks[i] = key_fn(best_component)[1] + (100 if best_component.suite(dominant_suite, dominant_rank) == CardSuite.TRUMP else 0)
+                ranks[i] = key_fn(best_component)[1] + (100 if best_component.suite(dominant_suite, dominant_rank) == CardSuit.TRUMP else 0)
         
         return max(range(len(cardsets)), key=lambda i: ranks[i]) 
 
@@ -617,7 +617,7 @@ class CardSet:
         rep = torch.zeros(108)
         
         index = 0
-        # First 66 or 88 cards in the order: diamonds, clubs, hearts, spades, ignoring trump cards
+        # First 72 or 96 cards in the order: diamonds, clubs, hearts, spades, ignoring trump cards
         for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
             if not trump_suit.is_NT and suit == trump_suit: continue
             for numeric_rank, letter_rank in LETTER_RANK.items():
@@ -639,7 +639,13 @@ class CardSet:
             
         # Next 8 cards are dominant rank cards
         for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
-            card = LETTER_RANK[dominant_rank] + suit
+            if trump_suit != suit:
+                card = LETTER_RANK[dominant_rank] + suit
+                rep[index:index + self._cards[card]] = 1
+                index += 2
+        
+        if not trump_suit.is_NT:
+            card = LETTER_RANK[dominant_rank] + trump_suit
             rep[index:index + self._cards[card]] = 1
             index += 2
             
@@ -648,7 +654,7 @@ class CardSet:
         rep[106:106 + self._cards[TrumpSuite.DJ]] = 1
 
         return rep
-    
+
     @classmethod
     def from_dynamic_tensor(self, rep: torch.Tensor, trump_suit: TrumpSuite, dominant_rank: int):
         cardset = CardSet()
@@ -674,10 +680,17 @@ class CardSet:
         
         # Next 8 cards are dominant rank cards
         for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
-            card = LETTER_RANK[dominant_rank] + suit
+            if suit != trump_suit:
+                card = LETTER_RANK[dominant_rank] + suit
+                cardset.add_card(card, count=rep[index])
+                cardset.add_card(card, count=rep[index + 1])
+                index += 2
+
+        # Dominant rank and suit
+        if not trump_suit.is_NT:
+            card = LETTER_RANK[dominant_rank] + trump_suit
             cardset.add_card(card, count=rep[index])
             cardset.add_card(card, count=rep[index + 1])
-            index += 2
 
         # Last 4 cards are the jokers
         cardset.add_card(TrumpSuite.XJ, count=rep[104] + rep[105])
@@ -715,10 +728,10 @@ class CardSet:
         # choose a random rank to use as kitty
         rank = random.randint(2, 14)
         kitty = CardSet({
-            LETTER_RANK[rank] + CardSuite.CLUB: 2,
-            LETTER_RANK[rank] + CardSuite.DIAMOND: 2,
-            LETTER_RANK[rank] + CardSuite.HEART: 2,
-            LETTER_RANK[rank] + CardSuite.SPADE: 2,
+            LETTER_RANK[rank] + CardSuit.CLUB: 2,
+            LETTER_RANK[rank] + CardSuit.DIAMOND: 2,
+            LETTER_RANK[rank] + CardSuit.HEART: 2,
+            LETTER_RANK[rank] + CardSuit.SPADE: 2,
         })
 
         # Make sure no one has the kitty cards

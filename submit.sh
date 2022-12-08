@@ -8,8 +8,8 @@
 #SBATCH -n 1 # number of tasks (i.e. processes)
 #SBATCH --cpus-per-task=4 # number of cores per task
 #SBATCH --gres=gpu:1
-#SBATCH --mem=60G
-##SBATCH --nodelist=bombe # if you need specific nodes
+#SBATCH --mem=64G
+##SBATCH --nodelist=como # if you need specific nodes
 #SBATCH --exclude=blaze,freddie,steropes # nodes not yet on SLURM-only
 #SBATCH -t 5-00:00 # time requested (D-HH:MM)
 # slurm will cd to this directory before running the script
@@ -22,7 +22,7 @@
 # filename patterns here: https://slurm.schedmd.com/sbatch.html
 # %N is the hostname (if used, will create output(s) per node)
 # %j is jobid
-#SBATCH -o slurm_logs/large_new_reward_tut.%N.%j.out # STDOUT
+#SBATCH -o exps/oracle_ablation1/%N.%j.out # STDOUT
 ##SBATCH -e slurm.%N.%j.err # STDERR
 # if you want to get emails as your jobs run/fail
 #SBATCH --mail-type=ALL # Mail events (NONE, BEGIN, END, FAIL, ALL)
@@ -49,10 +49,10 @@ export PYTHONUNBUFFERED=1
 
 # do ALL the research
 python3 -c "import torch; print('There are', torch.cuda.device_count(), 'GPU(s)')"
-echo devices = $CUDA_VISIBLE_DEVICES
-# python3 EigenTrain.py
+echo visible devices = $CUDA_VISIBLE_DEVICES
 
-python3 TrainLoop.py --model-folder exps/large_new_reward_tut --discount 0.95 --epsilon 0.05 --reuse-old-deck-prob 0.98 --games 1000 --eval-size 500 --tutorial-prob 0.05
+# No tutorial prob compared to oracle_full
+python3 TrainLoop.py --model-folder exps/oracle_ablation1 --discount 0.95 --epsilon 0.05 --tau 0.1 --reuse-old-deck-prob 0.98 --games 1500 --eval-size 300 --oracle-duration 50000 --decay-factor 1.01
 
 # print completion time
 date

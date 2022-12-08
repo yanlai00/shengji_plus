@@ -255,7 +255,8 @@ class Simulation:
                             else:
                                 rw -= self.game_engine.points_per_round[i] / 40 # Opponents are not so sad when they lose points
                         
-                        next_ob = self._main_history_per_player[position][i + 1][0] if i+1 < len(self._main_history_per_player[position]) else None
+                        next_ob = None
+                        # next_ob = self._main_history_per_player[position][i + 1][0] if i+1 < len(self._main_history_per_player[position]) else None
                         self._main_history_per_player[position][i] = (ob, ac, rw, next_ob)
                         
                         self.main_history.append(self._main_history_per_player[position][i])

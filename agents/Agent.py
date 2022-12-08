@@ -7,7 +7,7 @@ from typing import List, Tuple
 sys.path.append('.')
 from env.Observation import Observation
 from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceKittyAction
-from env.utils import AbsolutePosition, CardSuite, Declaration, Stage, TrumpSuite, get_rank, get_suite
+from env.utils import AbsolutePosition, CardSuit, Declaration, Stage, TrumpSuite, get_rank, get_suite
 from env.CardSet import CardSet, MoveType
 
 from env.utils import AbsolutePosition
@@ -67,7 +67,7 @@ class StrategicAgent(SJAgent):
             best_relative_count = 0
             for declare_action in obs.actions:
                 if isinstance(declare_action, DeclareAction) and declare_action.declaration.suite not in ['XJ', 'DJ']:
-                    trump_count = obs.hand.count_suite(CardSuite.TRUMP, declare_action.declaration.suite, obs.dominant_rank)
+                    trump_count = obs.hand.count_suite(CardSuit.TRUMP, declare_action.declaration.suite, obs.dominant_rank)
                     if trump_count > best_relative_count:
                         best_relative_count = trump_count
                         best_declare_option = declare_action
@@ -88,13 +88,13 @@ class StrategicAgent(SJAgent):
                 suite = get_suite(action.card, current_suite, obs.dominant_rank)
                 
                 # Best actions
-                if suite != CardSuite.TRUMP and rank <= 11 and action.count == 1:
+                if suite != CardSuit.TRUMP and rank <= 11 and action.count == 1:
                     best_actions.append((rank, action))
                 
                 # Second best actions
-                elif suite != CardSuite.TRUMP and (rank <= 8 and action.count == 2) or (rank <= 13 and action.count == 1):
+                elif suite != CardSuit.TRUMP and (rank <= 8 and action.count == 2) or (rank <= 13 and action.count == 1):
                     second_best_actions.append((rank * 2, action))
-                elif suite == CardSuite.TRUMP and rank <= 7:
+                elif suite == CardSuit.TRUMP and rank <= 7:
                     worse_actions.append((rank, action))
             
             if best_actions:
@@ -106,14 +106,14 @@ class StrategicAgent(SJAgent):
         elif obs.stage == Stage.chaodi_stage:
             best_suite_action: Action = None
             nt_action: Action = None
-            current_trump_count = obs.hand.count_suite(CardSuite.TRUMP, dominant_suite, obs.dominant_rank)
+            current_trump_count = obs.hand.count_suite(CardSuit.TRUMP, dominant_suite, obs.dominant_rank)
             best_chaodi_trump_count = 0
             for option in obs.actions:
                 if isinstance(option, ChaodiAction):
                     if option.declaration.suite in ('XJ', 'DJ'):
                         nt_action = option
                     else:
-                        new_trump_count = obs.hand.count_suite(CardSuite.TRUMP, option.declaration.suite, obs.dominant_rank)
+                        new_trump_count = obs.hand.count_suite(CardSuit.TRUMP, option.declaration.suite, obs.dominant_rank)
                         best_chaodi_trump_count = max(best_chaodi_trump_count, new_trump_count)
             
             if best_suite_action and best_chaodi_trump_count >= 10 and best_chaodi_trump_count + 2 >= current_trump_count:
@@ -142,7 +142,7 @@ class StrategicAgent(SJAgent):
                             else:
                                 second_best_actions.append(action)
                         print(action.move)
-                    elif action.move.cardset.count_suite(CardSuite.TRUMP, dominant_suite, obs.dominant_rank) == 0:
+                    elif action.move.cardset.count_suite(CardSuit.TRUMP, dominant_suite, obs.dominant_rank) == 0:
                         min_rank = d[0].cardset.min_rank(dominant_suite, obs.dominant_rank)
                         if isinstance(d[0], MoveType.Tractor) or isinstance(d[0], MoveType.Pair) and min_rank >= 8 and isinstance(d[0], MoveType.Single) and (min_rank == 14 or obs.dominant_rank == 14 and min_rank == 13):
                             optimal_actions.append(action)
