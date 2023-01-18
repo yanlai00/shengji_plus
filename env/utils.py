@@ -105,7 +105,7 @@ class Declaration:
 
     @classmethod
     def chaodi_level(self, suite: TrumpSuite, level: int):
-        if level > 1:
+        if level >= 1:
             if suite == TrumpSuite.DIAMOND:
                 return 1
             elif suite == TrumpSuite.CLUB:

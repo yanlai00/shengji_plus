@@ -115,7 +115,7 @@ class TestGame(unittest.TestCase):
         level_counts = [0, 0]
         points = [[], []]
 
-        for _ in tqdm.tqdm(range(1000)):
+        for _ in tqdm.tqdm(range(3000)):
             while sim.step()[0]: pass # Play a game
             opponent_index = int(sim.game_engine.dealer_position in ['N', 'S'])
             opponents_won = sim.game_engine.opponent_points >= 80

@@ -21,7 +21,7 @@ global_kitty_queue = ctx.Queue(maxsize=30)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0):
     train_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
@@ -33,7 +33,8 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
         warmup_games=warmup_games,
         tutorial_prob=tutorial_prob,
         oracle_duration=oracle_duration,
-        explore=explore
+        explore=explore,
+        game_count=game_count
     )
     while True:
         local_main, local_declare, local_kitty, local_chaodi = [], [], [], []
@@ -61,6 +62,7 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
 
 def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, eval_size, eval_results_queue: Queue, verbosity=logging.WARNING, learn_from_eval=False):
     logging.getLogger().setLevel(verbosity)
+    random.seed(idx)
     eval_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
@@ -94,11 +96,12 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
     exit(0)
 
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, dynamic_kitty=False):
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, dynamic_kitty=False, max_games=500000):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    oracle_duration_input = oracle_duration
 
     # Hash counts
     if use_hash_exploration:
@@ -122,20 +125,21 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         print("Using loaded model for declaration")
     declare_agent = DeclareAgent('declare', declare_model, tau=tau)
     if kitty_agent == 'fc':
-        kitty_model = train_models.KittyModel(dynamic_kitty=dynamic_kitty).to(device)
         if os.path.exists(f'{model_folder}/kitty.pt'):
-            kitty_model.load_state_dict(torch.load(f'{model_folder}/kitty.pt', map_location=device), strict=False)
             with open(f'{model_folder}/state.pkl', mode='rb') as f:
                 state = pickle.load(f)
                 dynamic_kitty = state.get('dynamic_kitty', False)
+            kitty_model = train_models.KittyModel(dynamic_kitty=dynamic_kitty).to(device)
+            kitty_model.load_state_dict(torch.load(f'{model_folder}/kitty.pt', map_location=device), strict=False)
             if dynamic_kitty:
                 kitty_agent = KittyAgent('kitty', kitty_model, tau=tau, dynamic_kitty=True)
+                print("Using dynamic kitty encoding")
             else:
                 kitty_agent = KittyAgent('kitty', kitty_model, tau=tau)
             print("Using loaded model for kitty")
         else:
+            kitty_model = train_models.KittyModel(dynamic_kitty=dynamic_kitty).to(device)
             kitty_agent = KittyAgent('kitty', kitty_model, tau=tau, dynamic_kitty=dynamic_kitty)
-        if dynamic_kitty: print("Using dynamic kitty encoding")
     elif kitty_agent == 'argmax':
         kitty_model = train_models.KittyArgmaxModel().to(device)
         if os.path.exists(f'{model_folder}/kitty_argmax.pt'):
@@ -160,8 +164,18 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         chaodi_model.load_state_dict(torch.load(f'{model_folder}/chaodi.pt', map_location=device), strict=False)
         print("Using loaded model for chaodi")
     chaodi_agent = ChaodiAgent('chaodi', chaodi_model, tau=tau)
+
     try:
-        main_model = train_models.MainModel(use_oracle=oracle_duration > 0).to(device)
+        try:
+            with open(f'{model_folder}/state.pkl', mode='rb') as f:
+                state = pickle.load(f)
+                iterations = state['iterations']
+                use_oracle = state['oracle_duration'] > 0 or oracle_duration > 0
+            oracle_duration = max(0, oracle_duration - games * iterations) # If resuming from checkpoint, reduce oracle duration
+            print(f"Resuming at oracle_duration {oracle_duration} / {games * iterations}")
+        except:
+            use_oracle = oracle_duration > 0 # First time training
+        main_model = train_models.MainModel(use_oracle=use_oracle).to(device)
     except:
         main_model = train_models.MainModel().to(device)
     if os.path.exists(f'{model_folder}/main.pt'):
@@ -190,6 +204,9 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             eval_models = importlib.import_module(f'{compare}.Models'.replace('/', '.'))
             with open(f'{compare}/state.pkl', mode='rb') as f:
                 eval_state = pickle.load(f)
+            # with open(f'{compare}/state.pkl', mode='w+b') as f:
+            #     eval_state['oracle_duration'] = 150000
+            #     pickle.dump(eval_state, f)
         except:
             eval_models = importlib.import_module("networks.Models")
         try:
@@ -209,9 +226,9 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             eval_main = MainAgent('main', eval_main_model)
         
         # TODO: support kitty argmax in compare mode
-        eval_kitty_model = eval_models.KittyModel().to(device)
+        print(f"Using kitty model in {compare} for comparison, dynamic={eval_state.get('dynamic_kitty', False)}")
+        eval_kitty_model = eval_models.KittyModel(dynamic_kitty=eval_state.get('dynamic_kitty', False)).to(device)
         eval_kitty_model.load_state_dict(torch.load(f'{compare}/kitty.pt', map_location=device), strict=False)
-        print(f"Using kitty model in {compare} for comparison")
         eval_kitty = KittyAgent("kitty", eval_kitty_model, dynamic_kitty=eval_state.get('dynamic_kitty', False))
 
         eval_declare_model = eval_models.DeclarationModel().to(device)
@@ -228,6 +245,20 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         eval_kitty_model.share_memory()
         eval_declare_model.share_memory()
         eval_chaodi_model.share_memory()
+    else:
+        if eval_agent_type == 'random':
+            eval_agent = RandomAgent('random')
+            print("Evaluating model performance using random agent...")
+        elif eval_agent_type == 'strategic':
+            eval_agent = StrategicAgent('strategic')
+            eval_main = eval_agent
+            eval_chaodi = eval_agent
+            eval_declare = eval_agent
+            eval_kitty = eval_agent
+            print("Evaluating model performance using strategic agent...")
+        else:
+            eval_agent = InteractiveAgent('interactive')
+            print("Evaluating model performance in interactive mode...")
 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -262,9 +293,9 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
     
     if not eval_only:
-        processes_count = 8 if model_type == 'mc' else 6
+        processes_count = 10 if model_type == 'mc' and not combos else 6
         for i in range(1 if single_process else processes_count):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_times, warmup_games // processes_count, tutorial_prob, oracle_duration // processes_count, explore))
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_times, warmup_games // processes_count, tutorial_prob, oracle_duration // processes_count, explore, iterations * games // processes_count))
             actor.start()
             actor_processes.append(actor)
             
@@ -274,7 +305,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             print(f"Starting with {warmup_games // processes_count * processes_count} warmup games...")
     
   
-    while True:
+    while iterations * games < max_games or eval_only:
         if not eval_only:
             print(f"Training iterations {iterations * games}-{(iterations+1) * games}...")
             for _ in tqdm.tqdm(range(0, games, 10)):
@@ -309,13 +340,6 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             kitty_agent.train_loss_history.clear()
             chaodi_agent.train_loss_history.clear()
         
-        print("Evaluating model performance...")
-        if eval_agent_type == 'random':
-            eval_agent = RandomAgent('random')
-        elif eval_agent_type == 'strategic':
-            eval_agent = StrategicAgent('strategic')
-        else:
-            eval_agent = InteractiveAgent('interactive')
         if single_process:
             eval_sim = Simulation(
                 main_agent=main_agent,
@@ -408,12 +432,14 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
                     'chaodi_optim_state': chaodi_agent.optimizer.state_dict(),
                     'hash_model_optim_state': hash_autoencoder.optimizer.state_dict() if hash_autoencoder else None,
                     'value_optim_state': main_agent.value_optimizer.state_dict() if isinstance(main_agent, QLearningMainAgent) else None,
-                    'oracle_duration': oracle_duration,
+                    'oracle_duration': oracle_duration_input,
                     'dynamic_kitty': dynamic_kitty
                 }, f)
         else:
             break
-
+    
+    for c in ctx.active_children():
+        c.kill()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Train loop')
@@ -442,5 +468,6 @@ if __name__ == '__main__':
     parser.add_argument('--oracle-duration', type=int, default=0)
     parser.add_argument('--explore', action='store_true')
     parser.add_argument('--dynamic-kitty', action='store_true')
+    parser.add_argument('--max-games', type=int, default=500000)
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.warmup_games, args.tutorial_prob, args.oracle_duration, args.explore, args.dynamic_kitty)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.warmup_games, args.tutorial_prob, args.oracle_duration, args.explore, args.dynamic_kitty, args.max_games)

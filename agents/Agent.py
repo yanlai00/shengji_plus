@@ -80,21 +80,60 @@ class StrategicAgent(SJAgent):
             second_best_actions: List[Tuple[int, Action]] = []
             worse_actions: List[Tuple[int, Action]] = []
             current_suite = obs.declaration.suite if obs.declaration else TrumpSuite.XJ
+
+            # count suite
+            suit_counts = {}
+            for suit in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
+                suit_count = obs.hand.count_suite(suit, obs.dominant_suit, obs.dominant_rank)
+                if suit_count > 0:
+                    suit_counts[suit] = suit_count
+            
+            suit_order = sorted(suit_counts.items(), key=lambda x: x[1])
+
             for action in obs.actions:
                 assert isinstance(action, PlaceKittyAction)
                 action: PlaceKittyAction
                 
                 rank = get_rank(action.card, current_suite, obs.dominant_rank)
-                suite = get_suite(action.card, current_suite, obs.dominant_rank)
+                suit = get_suite(action.card, current_suite, obs.dominant_rank)
                 
+                # score = 0
+
+                # if action.count == 1:
+                #     score += 5
+                
+                #     if rank <= 9:
+                #         score += 5
+                #     elif rank <= 13:
+                #         score += 2
+                # elif rank <= 6:
+                #     score += 3
+                
+                # if suit == CardSuit.TRUMP:
+                #     score -= 20
+                
+                # if suit == suit_order[0][0]:
+                #     score += 10
+                # elif suit == suit_order[1][0]:
+                #     score += 5
+                # elif suit == suit_order[-1][0]:
+                #     score -= 5
+                
+                # if score >= 10:
+                #     best_actions.append((rank, action))
+                # elif score > 0:
+                #     second_best_actions.append((rank, action))
+                # else:
+                #     worse_actions.append((rank, action))
+
                 # Best actions
-                if suite != CardSuit.TRUMP and rank <= 11 and action.count == 1:
+                if suit != CardSuit.TRUMP and rank <= 12 and action.count == 1:
                     best_actions.append((rank, action))
                 
                 # Second best actions
-                elif suite != CardSuit.TRUMP and (rank <= 8 and action.count == 2) or (rank <= 13 and action.count == 1):
-                    second_best_actions.append((rank * 2, action))
-                elif suite == CardSuit.TRUMP and rank <= 7:
+                elif suit != CardSuit.TRUMP and (rank <= 6 and action.count == 2) or (rank <= 13 and action.count == 1):
+                    second_best_actions.append((rank, action))
+                elif suit == CardSuit.TRUMP and rank <= 7:
                     worse_actions.append((rank, action))
             
             if best_actions:
@@ -141,7 +180,6 @@ class StrategicAgent(SJAgent):
                                 optimal_actions.append(action)
                             else:
                                 second_best_actions.append(action)
-                        print(action.move)
                     elif action.move.cardset.count_suite(CardSuit.TRUMP, dominant_suite, obs.dominant_rank) == 0:
                         min_rank = d[0].cardset.min_rank(dominant_suite, obs.dominant_rank)
                         if isinstance(d[0], MoveType.Tractor) or isinstance(d[0], MoveType.Pair) and min_rank >= 8 and isinstance(d[0], MoveType.Single) and (min_rank == 14 or obs.dominant_rank == 14 and min_rank == 13):

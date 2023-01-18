@@ -109,16 +109,19 @@ class Game:
                         logging.debug(f"{position.value} can chaodi using {suite.value}")
             actions.append(DontChaodiAction())
         elif self.round_history[-1][0] == position:
-            # For training purpose, maybe first turn off combos?
-            for move in self.hands[position].get_leading_moves(self.dominant_suite, self.dominant_rank, include_combos=self.enable_combos):
-                complement = self.unplayed_cards.copy()
-                complement.remove_cardset(self.hands[position])
-                if isinstance(move, MoveType.Combo):
-                    # Only consider combos that cannot be beaten by the combined cards of the other players
-                    if CardSet.is_bigger_than(complement, move, self.dominant_suite, self.dominant_rank) is None:
+            if self.enable_combos:
+                pass
+            else:
+                # For training purpose, maybe first turn off combos?
+                for move in self.hands[position].get_leading_moves(self.dominant_suite, self.dominant_rank, include_combos=False):
+                    complement = self.unplayed_cards.copy()
+                    complement.remove_cardset(self.hands[position])
+                    if isinstance(move, MoveType.Combo) and len(move.get_components(self.dominant_suite, self.dominant_rank)) <= 4:
+                        # Only consider combos that cannot be beaten by the combined cards of the other players
+                        if CardSet.is_bigger_than(complement, move, self.dominant_suite, self.dominant_rank) is None:
+                            actions.append(LeadAction(move))
+                    else:
                         actions.append(LeadAction(move))
-                else:
-                    actions.append(LeadAction(move))
         else:
             # Combo is a catch-all type if we don't know the composition of the cardset
             for cardset in self.hands[position].get_matching_moves(MoveType.Combo(self.round_history[-1][1][0]), self.dominant_suite, self.dominant_rank):

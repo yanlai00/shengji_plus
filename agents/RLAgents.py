@@ -334,7 +334,7 @@ class MainAgent(DeepAgent):
     
     def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
-            x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0, None)])
+            x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0, None)], training=training)
             if self.hash_model and training:
                 exploration_bonus = self.hash_model.exploration_bonus(x_batch)
             else:
@@ -349,7 +349,7 @@ class MainAgent(DeepAgent):
         else:
             return max(obs.actions, key=reward)
     
-    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]]):
+    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]], training=True):
         if self.use_oracle:
             x_batch = torch.zeros((len(samples), 1089 + 108)) # additionally provide other players' hands
         else:
@@ -373,8 +373,10 @@ class MainAgent(DeepAgent):
                 obs.dominates_all_tensor(cardset), # (1,)
             ])
 
-            if self.use_oracle:
+            if self.use_oracle and training:
                 state_tensor = torch.cat([obs.oracle_cardsets, state_tensor])
+            elif self.use_oracle and not training:
+                state_tensor = torch.cat([torch.zeros(108 * 3), state_tensor])
 
             x_batch[i] = torch.cat([state_tensor, ac.dynamic_tensor(obs.dominant_suit, obs.dominant_rank)])
             history_batch[i] = historical_moves

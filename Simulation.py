@@ -11,13 +11,13 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0) -> None:
         "If eval = True, use random agents for East and West."
 
         self.remaining_warmup_games = warmup_games
         self.tutorial_prob = tutorial_prob
         self.oracle_duration = oracle_duration
-        self.game_count = 0
+        self.game_count = game_count
         self.explore = explore
 
         self.main_agent = main_agent
@@ -139,7 +139,8 @@ class Simulation:
             # Collect the observation, action and reward if training(rewards will be updated after the game finished)
             if not self.eval_mode or self.learn_from_eval and self.current_player in (AbsolutePosition.NORTH, AbsolutePosition.SOUTH):
                 if last_stage == Stage.declare_stage:
-                    self._declaration_history_per_player[last_player].append((observation, action, reward))
+                    if len(observation.actions) > 1: # only collect data if the player had a choice
+                        self._declaration_history_per_player[last_player].append((observation, action, reward))
                 elif last_stage == Stage.kitty_stage:
                     if not self.kitty_argmax:
                         self._kitty_history_per_player[last_player].append((observation, action, reward))
@@ -197,9 +198,9 @@ class Simulation:
                             ob, ac, rw = self._kitty_history_per_player[position][i]
                             # if i + 1 == len(self._kitty_history_per_player[position]):
                             if is_defender(ob.position):
-                                rw += self.game_engine.final_defender_reward * ((i % 8) / 8 + 1 / 8)
+                                rw += self.game_engine.final_defender_reward # * ((i % 8) / 8 + 1 / 8)
                             else:
-                                rw += self.game_engine.final_opponent_reward * ((i % 8) / 8 + 1 / 8)
+                                rw += self.game_engine.final_opponent_reward # * ((i % 8) / 8 + 1 / 8)
                             # else:
                             #     rw += self._kitty_history_per_player[position][i + 1][2]
                             self._kitty_history_per_player[position][i] = (ob, ac, rw)
