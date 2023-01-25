@@ -1,6 +1,6 @@
 # Defines all potential actions that a player can take during a game.
 from .CardSet import CardSet, MoveType
-from .utils import LETTER_RANK, ORDERING, ORDERING_INDEX, CardSuit, Declaration, TrumpSuite, get_rank, get_suite
+from .utils import LETTER_RANK, ORDERING, ORDERING_INDEX, CardSuit, Declaration, TrumpSuite, get_rank, get_suit
 import torch
 
 class Action:
@@ -52,7 +52,7 @@ class PlaceKittyAction(Action):
     
     def get_dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
         card_rank = get_rank(self.card, dominant_suit, dominant_rank) # 3 - 14
-        card_suit = get_suite(self.card, dominant_suit, dominant_rank)
+        card_suit = get_suit(self.card, dominant_suit, dominant_rank)
 
         index = 0
         for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
@@ -131,13 +131,26 @@ class LeadAction(Action):
         return self.move.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)
     
 class AppendLeadAction(Action):
-    def __init__(self, current: MoveType, move: MoveType) -> None:
+    def __init__(self, current: CardSet, move: MoveType) -> None:
         self.current = current
-        combined_cardset = current.cardset.copy()
+        combined_cardset = current.copy()
         combined_cardset.add_cardset(move.cardset)
         self.move = MoveType.Combo(combined_cardset)
     def __repr__(self) -> str:
         return f"AppendLeadAction({self.current} -> {self.move})"
+    @property
+    def tensor(self) -> torch.Tensor:
+        "Shape: (108,)"
+        return self.move.cardset.tensor
+    
+    def dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+        return self.move.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)
+
+class EndLeadAction(Action):
+    def __init__(self, move: MoveType) -> None:
+        self.move = move
+    def __repr__(self) -> str:
+        return f"EndLeadAction({self.move})"
     @property
     def tensor(self) -> torch.Tensor:
         "Shape: (108,)"

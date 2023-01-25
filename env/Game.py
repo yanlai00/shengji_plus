@@ -3,7 +3,7 @@
 from math import ceil
 import random
 from typing import List, Tuple, Union
-from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceAllKittyAction, PlaceKittyAction
+from env.Actions import Action, AppendLeadAction, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, EndLeadAction, FollowAction, LeadAction, PlaceAllKittyAction, PlaceKittyAction
 
 from env.Observation import Observation
 from env.utils import *
@@ -67,9 +67,10 @@ class Game:
         self.draw_order = []
         self.is_warmup_game = is_warmup_game # In a warm up game, we don't allow declarations for fairness
         self.oracle_value = oracle_value # the coefficient for the oracle
+        self.consecutive_moves = 0
 
     @property
-    def dominant_suite(self):
+    def dominant_suit(self):
         return self.declarations[-1].suite if self.declarations else TrumpSuite.XJ
 
     @property
@@ -109,22 +110,23 @@ class Game:
                         logging.debug(f"{position.value} can chaodi using {suite.value}")
             actions.append(DontChaodiAction())
         elif self.round_history[-1][0] == position:
-            if self.enable_combos:
-                pass
+            if not self.enable_combos or not self.round_history[-1][1]:
+                for move in self.hands[position].get_leading_moves(self.dominant_suit, self.dominant_rank):
+                    actions.append(LeadAction(move) if self.enable_combos else EndLeadAction(move))
             else:
-                # For training purpose, maybe first turn off combos?
-                for move in self.hands[position].get_leading_moves(self.dominant_suite, self.dominant_rank, include_combos=False):
-                    complement = self.unplayed_cards.copy()
-                    complement.remove_cardset(self.hands[position])
-                    if isinstance(move, MoveType.Combo) and len(move.get_components(self.dominant_suite, self.dominant_rank)) <= 4:
-                        # Only consider combos that cannot be beaten by the combined cards of the other players
-                        if CardSet.is_bigger_than(complement, move, self.dominant_suite, self.dominant_rank) is None:
-                            actions.append(LeadAction(move))
-                    else:
-                        actions.append(LeadAction(move))
+                current_action = self.round_history[-1][1][0]
+                current_action_suit = get_suit(current_action.card_list()[0], self.dominant_suit, self.dominant_rank)
+                remaining_cards = self.hands[position].filter_by_suit(current_action_suit, self.dominant_suit, self.dominant_rank)
+                remaining_cards.remove_cardset(current_action)
+                # complement = self.unplayed_cards.copy()
+                # complement.remove_cardset(current_action)
+                if self.consecutive_moves < 3:
+                    for move in remaining_cards.get_leading_moves(self.dominant_suit, self.dominant_rank):
+                        actions.append(AppendLeadAction(current_action, move))
+                actions.append(EndLeadAction(MoveType.Combo(current_action)))
         else:
             # Combo is a catch-all type if we don't know the composition of the cardset
-            for cardset in self.hands[position].get_matching_moves(MoveType.Combo(self.round_history[-1][1][0]), self.dominant_suite, self.dominant_rank):
+            for cardset in self.hands[position].get_matching_moves(MoveType.Combo(self.round_history[-1][1][0]), self.dominant_suit, self.dominant_rank):
                 actions.append(FollowAction(cardset))
         assert actions, f"Agent {position} has no action to choose from!"
 
@@ -139,7 +141,7 @@ class Game:
             dealer_position = self.dealer_position.relative_to(position) if self.dealer_position else None,
             defender_points = self.opponent_points,
             opponent_points = self.opponent_points,
-            round_history = [(p.relative_to(position), cards) for p, cards in self.round_history],
+            round_history = [(p.relative_to(position), cards[:]) for p, cards in self.round_history],
             unplayed_cards = self.unplayed_cards.copy(),
             leads_current_trick = self.round_history[-1][0] == position if self.round_history else position == self.dealer_position,
             chaodi_times = self.chaodi_times,
@@ -211,9 +213,9 @@ class Game:
 
             suite_count_before = 0
             for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
-                if self.hands[player_position].count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
+                if self.hands[player_position].count_suite(suite, self.dominant_suit, self.dominant_rank) > 0:
                     suite_count_before += 1
-            trump_count_before = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suite, self.dominant_rank)
+            trump_count_before = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
 
             self.kitty.add_card(action.card)
             self.hands[player_position].remove_card(action.card)
@@ -222,14 +224,14 @@ class Game:
             suite_count_after = 0
             trump_count_after = 0
             for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
-                if self.hands[player_position].count_suite(suite, self.dominant_suite, self.dominant_rank) > 0:
+                if self.hands[player_position].count_suite(suite, self.dominant_suit, self.dominant_rank) > 0:
                     suite_count_after += 1
-            trump_count_after = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suite, self.dominant_rank)
+            trump_count_after = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
             
             reward = 0.2 * (suite_count_before - suite_count_after) # Encourage players to get rid of a suite completely
             if trump_count_after < trump_count_before:
                 reward -= 0.5 # Discourage players from discarding trump cards
-            if get_rank(action.card, self.dominant_suite, self.dominant_rank) >= 15:
+            if get_rank(action.card, self.dominant_suit, self.dominant_rank) >= 15:
                 reward -= 1 # Highly discourage players from discarding dominant rank cards or jokers
             if self.kitty.size == 8:
                 if not self.round_history:
@@ -295,11 +297,22 @@ class Game:
             else:
                 return player_position, 0
         elif isinstance(action, LeadAction):
+            logging.debug(f"Round {len(self.round_history)}: {player_position.value} places {action.move.cardset}")
+            self.round_history[-1][1].append(action.move.cardset)
+            self.consecutive_moves = 1
+            return player_position, 0 # current player continues to place cards until EndLeadAction
+        elif isinstance(action, AppendLeadAction):
+            logging.debug(f"Round {len(self.round_history)}: {player_position.value} updates lead action to {action.move.cardset}")
+            self.round_history[-1][1][0] = action.move.cardset
+            self.consecutive_moves += 1
+            return player_position, 0
+        elif isinstance(action, EndLeadAction):
             logging.debug(f"Round {len(self.round_history)}: {player_position.value} leads with {action.move}")
             other_player_hands = [self.hands[player_position.next_position], self.hands[player_position.next_position.next_position], self.hands[player_position.next_position.next_position.next_position]]
-            is_legal, penalty_move = CardSet.is_legal_combo(action.move, other_player_hands, self.dominant_suite, self.dominant_rank)
+            is_legal, penalty_move = CardSet.is_legal_combo(action.move, other_player_hands, self.dominant_suit, self.dominant_rank)
             if is_legal:
-                self.round_history[-1][1].append(action.move.cardset)
+                if not self.round_history[-1][1]:
+                    self.round_history[-1][1].append(action.move.cardset)
                 self.hands[player_position].remove_cardset(action.move.cardset)
                 self.unplayed_cards.remove_cardset(action.move.cardset)
                 for card in action.move.cardset.card_list():
@@ -307,6 +320,7 @@ class Game:
                         self.public_cards[player_position].remove_card(card)
                 return player_position.next_position, 0
             else:
+                self.round_history[-1][1].pop()
                 self.round_history[-1][1].append(penalty_move)
                 self.hands[player_position].remove_cardset(penalty_move)
                 self.unplayed_cards.remove_cardset(penalty_move)
@@ -330,7 +344,7 @@ class Game:
                 if self.public_cards[player_position].has_card(card):
                     self.public_cards[player_position].remove_card(card)
             if len(moves) == 4: # round finished, find max player and update points
-                winner_index = CardSet.round_winner(moves, self.dominant_suite, self.dominant_rank)
+                winner_index = CardSet.round_winner(moves, self.dominant_suit, self.dominant_rank)
                 total_points = sum([c.total_points() for c in moves])
                 
                 position_array = [lead_position, lead_position.next_position, lead_position.next_position.next_position, lead_position.last_position]
@@ -354,7 +368,7 @@ class Game:
                     logging.info(f"Game ends! Opponent current points: {self.opponent_points}")
                     logging.debug(f"Points per round: {self.points_per_round}")
                     if not declarer_wins_round:
-                        multiplier = MoveType.Combo(moves[winner_index]).get_multiplier(self.dominant_suite, self.dominant_rank)
+                        multiplier = MoveType.Combo(moves[winner_index]).get_multiplier(self.dominant_suit, self.dominant_rank)
                         self.opponent_points += self.kitty.total_points() * multiplier
                         self.points_per_round[-1] -= self.kitty.total_points() * multiplier # Opponents earned points from kitty
                         logging.info(f"Opponents received {self.kitty.total_points()} x {multiplier} from kitty. Final points: {self.opponent_points}")

@@ -14,14 +14,16 @@ import numpy as np
 from networks.StateAutoEncoder import StateAutoEncoder
 
 ctx = torch.multiprocessing.get_context('spawn')
-global_main_queue = ctx.Queue(maxsize=30)
-global_chaodi_queue = ctx.Queue(maxsize=30)
-global_declare_queue = ctx.Queue(maxsize=30)
-global_kitty_queue = ctx.Queue(maxsize=30)
+global_main_queue = ctx.Queue(maxsize=20)
+global_chaodi_queue = ctx.Queue(maxsize=20)
+global_declare_queue = ctx.Queue(maxsize=20)
+global_kitty_queue = ctx.Queue(maxsize=20)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0, log_file=''):
+    logging.getLogger().setLevel(logging.DEBUG)
+    logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
     train_sim = Simulation(
         main_agent=main_agent,
         declare_agent=declare_agent,
@@ -42,10 +44,10 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
         for i in range(10):
             with torch.no_grad():
                 while train_sim.step()[0]: pass
-                local_main.extend(train_sim.main_history[:])
-                local_declare.extend(train_sim.declaration_history[:])
-                local_chaodi.extend(train_sim.chaodi_history[:])
-                local_kitty.extend(train_sim.kitty_history[:])
+                local_main.extend(train_sim.main_history)
+                local_declare.extend(train_sim.declaration_history)
+                local_chaodi.extend(train_sim.chaodi_history)
+                local_kitty.extend(train_sim.kitty_history)
             
             # Get new deck every `reuse_times` times
             if same_deck_count < reuse_times:
@@ -54,14 +56,18 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
             else:
                 same_deck_count = 0
                 train_sim.reset(reuse_old_deck=False)
+            with open(log_file, 'w') as f:
+                f.write('')
         train_sim.epsilon = max(epsilon, train_sim.epsilon / decay_factor)
         global_main_queue.put(local_main)
         global_declare_queue.put(local_declare)
         global_chaodi_queue.put(local_chaodi)
         global_kitty_queue.put(local_kitty)
 
-def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, eval_size, eval_results_queue: Queue, verbosity=logging.WARNING, learn_from_eval=False):
-    logging.getLogger().setLevel(verbosity)
+def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, eval_size, eval_results_queue: Queue, verbose=False, learn_from_eval=False, log_file=''):
+    logging.getLogger().setLevel(logging.DEBUG)
+    if not verbose:
+        logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
     random.seed(idx)
     eval_sim = Simulation(
         main_agent=main_agent,
@@ -76,7 +82,7 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
         eval=True,
         learn_from_eval=learn_from_eval
     )
-    for _ in range(eval_size):
+    while True:
         with torch.no_grad():
             while eval_sim.step()[0]: pass
         opponent_index = int(eval_sim.game_engine.dealer_position in ['N', 'S'])
@@ -86,13 +92,11 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
             win_index,
             opponent_index,
             eval_sim.game_engine.opponent_points,
-            abs(eval_sim.game_engine.final_defender_reward),
-            eval_sim.main_history[:],
-            eval_sim.declaration_history[:],
-            eval_sim.chaodi_history[:],
-            eval_sim.kitty_history[:]
+            abs(eval_sim.game_engine.final_defender_reward)
         ))
         eval_sim.reset()
+        with open(log_file, 'w') as f:
+            f.write('')
     exit(0)
 
 
@@ -165,14 +169,20 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
         print("Using loaded model for chaodi")
     chaodi_agent = ChaodiAgent('chaodi', chaodi_model, tau=tau)
 
+    iterations = 0
+    stats = []
     try:
         try:
             with open(f'{model_folder}/state.pkl', mode='rb') as f:
                 state = pickle.load(f)
-                iterations = state['iterations']
                 use_oracle = state['oracle_duration'] > 0 or oracle_duration > 0
-            oracle_duration = max(0, oracle_duration - games * iterations) # If resuming from checkpoint, reduce oracle duration
-            print(f"Resuming at oracle_duration {oracle_duration} / {games * iterations}")
+            with open(f'{model_folder}/stats.pkl', mode='rb') as f:
+                stats = pickle.load(f)
+                iterations = stats[-1]['iterations']
+                print(f"Using checkpoint at iteration {iterations}")
+                print(f"Continuing with saved stats")
+            oracle_duration = max(0, oracle_duration - iterations) # If resuming from checkpoint, reduce oracle duration
+            print(f"Resuming at oracle_duration {iterations} / {oracle_duration}")
         except:
             use_oracle = oracle_duration > 0 # First time training
         main_model = train_models.MainModel(use_oracle=use_oracle).to(device)
@@ -263,19 +273,16 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     else:
-        logging.getLogger().setLevel(logging.WARN)
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.basicConfig(format="%(process)d %(message)s", filename=f'{model_folder}/debug.log', encoding='utf-8', level=logging.DEBUG)
     
     if not eval_only:
         with open(f'{model_folder}/command.txt', mode='w') as f:
             f.write(' '.join(sys.argv))
     
-    stats = []
-    iterations = 0
-
     try:
         with open(f'{model_folder}/state.pkl', mode='rb') as f:
             state = pickle.load(f)
-            iterations = state['iterations']
             main_agent.optimizer.load_state_dict(state['main_optim_state'])
             kitty_agent.optimizer.load_state_dict(state['kitty_optim_state'])
             declare_agent.optimizer.load_state_dict(state['declare_optim_state'])
@@ -284,10 +291,6 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
                 hash_autoencoder.optimizer.load_state_dict(state['hash_model_optim_state'])
             if isinstance(main_agent, QLearningMainAgent):
                 main_agent.value_optimizer.load_state_dict(state['value_optim_state'])
-            print(f"Using checkpoint at iteration {iterations}")
-        with open(f'{model_folder}/stats.pkl', mode='rb') as f:
-            stats = pickle.load(f)
-            print(f"Continuing with saved stats")
     except:
         print("Starting new training session")
         shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
@@ -295,7 +298,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if not eval_only:
         processes_count = 10 if model_type == 'mc' and not combos else 6
         for i in range(1 if single_process else processes_count):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_times, warmup_games // processes_count, tutorial_prob, oracle_duration // processes_count, explore, iterations * games // processes_count))
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_times, warmup_games // processes_count, tutorial_prob, oracle_duration // processes_count, explore, iterations // processes_count, f"{model_folder}/debug{i}.log"))
             actor.start()
             actor_processes.append(actor)
             
@@ -305,9 +308,9 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             print(f"Starting with {warmup_games // processes_count * processes_count} warmup games...")
     
   
-    while iterations * games < max_games or eval_only:
+    while iterations < max_games or eval_only:
         if not eval_only:
-            print(f"Training iterations {iterations * games}-{(iterations+1) * games}...")
+            print(f"Training iterations {iterations}-{iterations + games}...")
             for _ in tqdm.tqdm(range(0, games, 10)):
                 # print('wait', global_main_queue.qsize(), global_declare_queue.qsize(), global_kitty_queue.qsize(), global_chaodi_queue.qsize())
                 declare_batch = global_declare_queue.get()
@@ -362,61 +365,37 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             opposition_points = eval_sim.opposition_points
         else:
             eval_count = 6 if not eval_only else 16
-            eval_size = max(1, eval_size // eval_count * eval_count) # Must be multiple of eval_count
+            # eval_size = max(1, eval_size // eval_count * eval_count) # Must be multiple of eval_count
             win_counts = [0, 0] # Defenders, opponents
             level_counts = [0, 0]
             opposition_points = [[], []]
             eval_queue = ctx.Queue()
             eval_actors = []
             for i in range(min(eval_size, eval_count)):
-                actor = ctx.Process(target=evaluator, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, max(1, eval_size // eval_count), eval_queue, logging.DEBUG if verbose else logging.WARNING, learn_from_eval))
+                actor = ctx.Process(target=evaluator, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, eval_main, eval_declare, eval_kitty, eval_chaodi, combos, max(1, eval_size // eval_count), eval_queue, verbose, learn_from_eval, f"{model_folder}/eval{i}.log"))
                 actor.start()
                 eval_actors.append(actor)
         
-            # Collect the games where the agent has lost
-            failed_main_history, failed_declare_history, failed_chaodi_history, failed_kitty_history = [], [], [], []
-            accumulated_failed_games = 0
             with tqdm.tqdm(total=eval_size) as progress_bar:
                 for i in range(eval_size):
-                    win_index, opponent_index, points, levels, main_history, declare_history, chaodi_history, kitty_history = eval_queue.get()
+                    win_index, opponent_index, points, levels = eval_queue.get()
                     win_counts[win_index] += 1
                     level_counts[win_index] += levels
                     opposition_points[opponent_index].append(points)
-                    if learn_from_eval and win_index == 1: # index 0 means agent won, 1 means baseline model won
-                        failed_main_history.extend(main_history)
-                        failed_declare_history.extend(declare_history)
-                        failed_chaodi_history.extend(chaodi_history)
-                        failed_kitty_history.extend(kitty_history)
-                        accumulated_failed_games += 1
-                        if accumulated_failed_games == 10:
-                            try:
-                                global_main_queue.put(failed_main_history, block=False)
-                            except: pass
-                            try:
-                                global_declare_queue.put(failed_declare_history, block=False)
-                            except: pass
-                            try:
-                                global_chaodi_queue.put(failed_chaodi_history, block=False)
-                            except: pass
-                            try:
-                                global_kitty_queue.put(failed_kitty_history, block=False)
-                            except: pass
-                            failed_main_history, failed_declare_history, failed_chaodi_history, failed_kitty_history = [], [], [], []
-                            accumulated_failed_games = 0
                     progress_bar.update(1)
                 
         
             for a in eval_actors:
-                a.join()
+                a.kill()
 
         print('Win counts:', win_counts, 'level counts:', level_counts)
         print("Average opposition points:", np.mean(opposition_points[0]), np.mean(opposition_points[1]))
         
-        iterations += 1
+        iterations += games
 
         if not eval_only:
             stats.append({
-                "iterations": iterations * games,
+                "iterations": iterations,
                 "win_counts": win_counts[0] / sum(win_counts),
                 "level_counts": level_counts[0] / sum(level_counts),
                 "avg_points": [np.mean(opposition_points[0]), np.mean(opposition_points[1])]

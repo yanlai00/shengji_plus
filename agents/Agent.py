@@ -6,8 +6,8 @@ from typing import List, Tuple
 
 sys.path.append('.')
 from env.Observation import Observation
-from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceKittyAction
-from env.utils import AbsolutePosition, CardSuit, Declaration, Stage, TrumpSuite, get_rank, get_suite
+from env.Actions import Action, AppendLeadAction, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, EndLeadAction, FollowAction, LeadAction, PlaceKittyAction
+from env.utils import AbsolutePosition, CardSuit, Declaration, Stage, TrumpSuite, get_rank, get_suit
 from env.CardSet import CardSet, MoveType
 
 from env.utils import AbsolutePosition
@@ -28,8 +28,8 @@ class RandomAgent(SJAgent):
         combo: List[Action] = []
         others: List[Action] = []
         for a in obs.actions:
-            if isinstance(a, LeadAction):
-                if isinstance(a.move, MoveType.Combo):
+            if isinstance(a, LeadAction) or isinstance(a, AppendLeadAction) or isinstance(a, EndLeadAction):
+                if isinstance(a, AppendLeadAction):
                     combo.append(a)
                 else:
                     non_combo.append(a)
@@ -43,7 +43,7 @@ class RandomAgent(SJAgent):
         elif not combo:
             return random.choice(non_combo)
         else:
-            return random.choice(combo) if random.random() > 0.9 else random.choice(non_combo)
+            return random.choice(combo) if random.random() > 0.99 else random.choice(non_combo)
 
 class InteractiveAgent(SJAgent):
     def act(self, obs: Observation, **kwargs):
@@ -95,7 +95,7 @@ class StrategicAgent(SJAgent):
                 action: PlaceKittyAction
                 
                 rank = get_rank(action.card, current_suite, obs.dominant_rank)
-                suit = get_suite(action.card, current_suite, obs.dominant_rank)
+                suit = get_suit(action.card, current_suite, obs.dominant_rank)
                 
                 # score = 0
 

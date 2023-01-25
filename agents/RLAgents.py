@@ -14,7 +14,7 @@ from networks.StateAutoEncoder import StateAutoEncoder
 from .Agent import SJAgent
 
 sys.path.append('.')
-from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceAllKittyAction, PlaceKittyAction
+from env.Actions import Action, AppendLeadAction, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, EndLeadAction, FollowAction, LeadAction, PlaceAllKittyAction, PlaceKittyAction
 from env.utils import ORDERING_INDEX, Stage, softmax
 from env.Observation import Observation
 from networks.Models import *
@@ -39,6 +39,7 @@ class DeepAgent(SJAgent):
         raise NotImplementedError
     
     def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
+        logging.debug(f"({self.name}) Learning from {len(samples)} samples")
         splits = int(len(samples) / self.batch_size)
         for subsamples in np.array_split(samples, max(1, splits), axis=0):
             *args, rewards = self.prepare_batch_inputs(subsamples)
@@ -358,7 +359,7 @@ class MainAgent(DeepAgent):
         gt_rewards = torch.zeros((len(samples), 1))
         for i, (obs, ac, rw, _) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_dynamic_tensor # obs.historical_moves_tensor
-            cardset = ac.move.cardset if isinstance(ac, LeadAction) else ac.cardset
+            cardset = ac.move.cardset if isinstance(ac, LeadAction) or isinstance(ac, AppendLeadAction) or isinstance(ac, EndLeadAction) else ac.cardset
             state_tensor = torch.cat([
                 obs.dynamic_hand_tensor, # (108,),
                 obs.dealer_position_tensor, # (4,)
@@ -455,7 +456,7 @@ class QLearningMainAgent(DeepAgent):
         terminals = torch.zeros(len(samples), 1)
         for i, (obs, ac, rw, next_obs) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_dynamic_tensor
-            cardset = ac.move.cardset if isinstance(ac, LeadAction) else ac.cardset
+            cardset = ac.move.cardset if isinstance(ac, LeadAction) or isinstance(ac, AppendLeadAction) or isinstance(ac, EndLeadAction) else ac.cardset
             state_tensor = torch.cat([
                 obs.dynamic_hand_tensor,
                 obs.dealer_position_tensor, # (4,)

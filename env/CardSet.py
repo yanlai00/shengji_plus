@@ -6,7 +6,7 @@ from typing import Dict, List, Set, Tuple, Union
 import torch
 import itertools
 
-from env.utils import LETTER_RANK, ORDERING, CardSuit, TrumpSuite, get_rank, get_suite
+from env.utils import LETTER_RANK, ORDERING, CardSuit, TrumpSuite, get_rank, get_suit
 
 class MoveType:
     pass
@@ -37,7 +37,7 @@ class MoveType:
         def multiplier(self):
             return 2
         def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
-            return get_suite(self.card, dominant_suite, dominant_rank)
+            return get_suit(self.card, dominant_suite, dominant_rank)
 
     class Pair(MoveType):
         def __init__(self, card: str) -> None:
@@ -51,7 +51,7 @@ class MoveType:
         def cardset(self):
             return CardSet({self.card: 2})
         def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
-            return get_suite(self.card, dominant_suite, dominant_rank)
+            return get_suit(self.card, dominant_suite, dominant_rank)
     
     class Tractor(MoveType):
         def __init__(self, cardset: "CardSet") -> None:
@@ -66,7 +66,7 @@ class MoveType:
         def cardset(self):
             return self._cardset
         def suite(self, dominant_suite: TrumpSuite, dominant_rank: int) -> CardSuit:
-            return get_suite(self._cardset.card_list()[0], dominant_suite, dominant_rank)
+            return get_suit(self._cardset.card_list()[0], dominant_suite, dominant_rank)
     
     class Combo(MoveType):
         "An active combo move. All elements in a combo are required to have the same CardSuite."
@@ -123,10 +123,10 @@ class CardSet:
     def has_card(self, card: str):
         return self._cards[card] > 0
     
-    def filter_by_suite(self, suite: CardSuit, dominant_suite: TrumpSuite, dominant_rank: int):
+    def filter_by_suit(self, suite: CardSuit, dominant_suite: TrumpSuite, dominant_rank: int):
         subset = CardSet()
         for card, count in self._cards.items():
-            if count > 0 and get_suite(card, dominant_suite, dominant_rank) == suite:
+            if count > 0 and get_suit(card, dominant_suite, dominant_rank) == suite:
                 subset.add_card(card, count)
         return subset
 
@@ -138,7 +138,7 @@ class CardSet:
         "Count the total number of cards the set has in the given CardSuite."
         total_count = 0
         for card, count in self._cards.items():
-            if get_suite(card, dominant_suite, dominant_rank) == suite:
+            if get_suit(card, dominant_suite, dominant_rank) == suite:
                 total_count += count
         return total_count
 
@@ -224,7 +224,7 @@ class CardSet:
         if include_combos:
             cards_by_suite = {suite: CardSet() for suite in suite_list}
             for card in self.card_list():
-                cards_by_suite[get_suite(card, dominant_suite, dominant_rank)].add_card(card)
+                cards_by_suite[get_suit(card, dominant_suite, dominant_rank)].add_card(card)
             for suite, suite_cardset in cards_by_suite.items():
                 if suite == CardSuit.TRUMP: continue
                 records = set()
@@ -255,7 +255,7 @@ class CardSet:
         
         pairs_by_suite = {suite: [] for suite in suite_list}
         for card in pair_cards:
-            pairs_by_suite[get_suite(card, dominant_suite, dominant_rank)].append(card)
+            pairs_by_suite[get_suit(card, dominant_suite, dominant_rank)].append(card)
 
         for suite, cards in pairs_by_suite.items():
             card_ranks: List[Tuple[int, str]] = []
@@ -306,7 +306,7 @@ class CardSet:
 
         def matches_for_simple_move(target: Union[MoveType.Single, MoveType.Pair, MoveType.Tractor], hand: CardSet):
             matches: Set[CardSet] = set()
-            same_suite_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suite(card, dominant_suite, dominant_rank) == target_suite}
+            same_suite_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suit(card, dominant_suite, dominant_rank) == target_suite}
             suite_count = hand.count_suite(target_suite, dominant_suite, dominant_rank)
 
             if isinstance(target, MoveType.Single):
@@ -439,7 +439,7 @@ class CardSet:
             
             component_matches = matches_for_simple_move(largest_component, self)
             if remaining_target.size > 0:
-                matches: List[CardSet] = []
+                matches: Set[CardSet] = set()
                 for c1_match in component_matches:
                     remaining_self = self.copy()
                     remaining_self.remove_cardset(c1_match)
@@ -447,8 +447,8 @@ class CardSet:
                     for remaining_match in remaining_matches:
                         combined = c1_match.copy()
                         combined.add_cardset(remaining_match)
-                        matches.append(combined)
-                return matches
+                        matches.add(combined)
+                return list(matches)
             else:
                 return component_matches
         else:
@@ -512,7 +512,7 @@ class CardSet:
 
     @classmethod
     def is_legal_combo(self, move: MoveType.Combo, other_players_cardsets: List['CardSet'], dominant_suite: TrumpSuite, dominant_rank: int):
-        filtered_cardsets: List[CardSet] = [c.filter_by_suite(move.suite(dominant_suite, dominant_rank), dominant_suite, dominant_rank) for c in other_players_cardsets]
+        filtered_cardsets: List[CardSet] = [c.filter_by_suit(move.suite(dominant_suite, dominant_rank), dominant_suite, dominant_rank) for c in other_players_cardsets]
         
         def key_fn(move: MoveType):
             "Returns the maximum rank of the largest component of a move"

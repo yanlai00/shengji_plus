@@ -149,7 +149,9 @@ class Simulation:
                 elif last_stage == Stage.chaodi_stage:
                     self._chaodi_history_per_player[last_player].append((observation, action, reward))
                 else:
-                    self._main_history_per_player[last_player].append((observation, action, reward))
+                    # Don't store intermediate append actions
+                    if isinstance(action, EndLeadAction) or isinstance(action, FollowAction):
+                        self._main_history_per_player[last_player].append((observation, action, reward))
             
             # Helper function that determines if a player is on the defender side or the opponent side
             def is_defender(player: AbsolutePosition):

@@ -140,7 +140,7 @@ LETTER_RANK = {
 
 NUMERIC_RANK = {v:k for k,v in LETTER_RANK.items()}
 
-def get_suite(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
+def get_suit(card: str, dominant_suit: TrumpSuite, dominant_rank: int):
     "Determines if the card is a trump card, and if not, determines which suite it is in."
     if card == 'XJ' or card == 'DJ':
         return CardSuit.TRUMP
@@ -148,7 +148,7 @@ def get_suite(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
     rank = NUMERIC_RANK[card[:-1]]
     suite = CardSuit(card[-1])
     
-    if rank == dominant_rank or suite == dominant_suite:
+    if rank == dominant_rank or suite == dominant_suit:
         return CardSuit.TRUMP
     else:
         return suite
