@@ -14,10 +14,10 @@ import numpy as np
 from networks.StateAutoEncoder import StateAutoEncoder
 
 ctx = torch.multiprocessing.get_context('spawn')
-global_main_queue = ctx.Queue(maxsize=20)
-global_chaodi_queue = ctx.Queue(maxsize=20)
-global_declare_queue = ctx.Queue(maxsize=20)
-global_kitty_queue = ctx.Queue(maxsize=20)
+global_main_queue = ctx.Queue(maxsize=25)
+global_chaodi_queue = ctx.Queue(maxsize=25)
+global_declare_queue = ctx.Queue(maxsize=25)
+global_kitty_queue = ctx.Queue(maxsize=25)
 actor_processes = []
 
 # Parallelized data sampling
@@ -82,6 +82,7 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
         eval=True,
         learn_from_eval=learn_from_eval
     )
+    iterations = 0
     while True:
         with torch.no_grad():
             while eval_sim.step()[0]: pass
@@ -97,7 +98,11 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
         eval_sim.reset()
         with open(log_file, 'w') as f:
             f.write('')
-    exit(0)
+        iterations += 1
+        
+        if not combos and iterations > eval_size:
+            exit(0)
+    
 
 
 def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, dynamic_kitty=False, max_games=500000):
@@ -363,8 +368,9 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
             win_counts = eval_sim.win_counts
             level_counts = eval_sim.level_counts
             opposition_points = eval_sim.opposition_points
+            print(f"Average inference time: {np.mean(eval_sim.inference_times)}s")
         else:
-            eval_count = 6 if not eval_only else 16
+            eval_count = 6 if not eval_only else 12
             # eval_size = max(1, eval_size // eval_count * eval_count) # Must be multiple of eval_count
             win_counts = [0, 0] # Defenders, opponents
             level_counts = [0, 0]

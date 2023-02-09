@@ -1,4 +1,5 @@
 # A class that simulates a game
+from datetime import datetime
 import logging
 import random
 from typing import Deque, Dict, List, Tuple
@@ -104,6 +105,8 @@ class Simulation:
 
         self.cumulative_rewards = not isinstance(main_agent, QLearningMainAgent) # Whether to compute cumulative rewards at the end
 
+        self.inference_times = []
+
     def step(self):
         "Step the game and return whether the game is still ongoing."
         if not self.game_engine.game_started:
@@ -130,7 +133,11 @@ class Simulation:
                 elif self.game_engine.stage == Stage.chaodi_stage:
                     action = self.chaodi_agent.act(observation, explore=self.explore, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
                 else:
+                    if self.eval_mode:
+                        start = datetime.now().timestamp()
                     action = self.main_agent.act(observation, explore=self.explore, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
+                    if self.eval_mode:
+                        self.inference_times.append(datetime.now().timestamp() - start)
             
             last_stage = self.game_engine.stage
             last_player = self.current_player
@@ -253,10 +260,10 @@ class Simulation:
                             if self.game_engine.points_per_round[i] >= 0:
                                 rw += self.game_engine.points_per_round[i] / 80 # Defenders are only moderately happy when escaping points
                             else:
-                                rw += self.game_engine.points_per_round[i] / 60 # Defenders should care a lot about losing points
+                                rw += self.game_engine.points_per_round[i] / 80 # Defenders should care a lot about losing points
                         else:
                             if self.game_engine.points_per_round[i] <= 0:
-                                rw -= self.game_engine.points_per_round[i] / 60 # Opponents are happier when earning points
+                                rw -= self.game_engine.points_per_round[i] / 80 # Opponents are happier when earning points
                             else:
                                 rw -= self.game_engine.points_per_round[i] / 80 # Opponents are not so sad when they lose points
                         
