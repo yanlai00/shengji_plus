@@ -12,7 +12,7 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0) -> None:
+    def __init__(self, main_agent: SJAgent, declare_agent: SJAgent, kitty_agent: SJAgent, chaodi_agent: SJAgent = None, discount=0.99, enable_combos=False, eval=False, eval_main: SJAgent = None, eval_declare: SJAgent = None, eval_kitty: SJAgent = None, eval_chaodi: SJAgent = None, epsilon=0.98, learn_from_eval=False, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0, combo_penalty=0.1) -> None:
         "If eval = True, use random agents for East and West."
 
         self.remaining_warmup_games = warmup_games
@@ -33,7 +33,8 @@ class Simulation:
                 enable_chaodi=chaodi_agent is not None,
                 enable_combos=False,
                 is_warmup_game=True,
-                oracle_value=self.oracle_value
+                oracle_value=self.oracle_value,
+                combo_penalty=combo_penalty
             )
         else:
             self.game_engine = Game(
@@ -41,7 +42,8 @@ class Simulation:
                 dealer_position=AbsolutePosition.random() if random.random() > 0.5 else None,
                 enable_chaodi=chaodi_agent is not None,
                 enable_combos=enable_combos,
-                oracle_value=self.oracle_value
+                oracle_value=self.oracle_value,
+                combo_penalty=combo_penalty
             )
 
         self.current_player = None
@@ -58,6 +60,7 @@ class Simulation:
         self.eval_chaodi = eval_chaodi
         self.epsilon = epsilon
         self.kitty_argmax = isinstance(kitty_agent, KittyArgmaxAgent)
+        self.combo_penalty = combo_penalty
 
         # (state, action, reward) tuples for each player during the main stage of the game
         self._main_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
@@ -260,10 +263,10 @@ class Simulation:
                             if self.game_engine.points_per_round[i] >= 0:
                                 rw += self.game_engine.points_per_round[i] / 80 # Defenders are only moderately happy when escaping points
                             else:
-                                rw += self.game_engine.points_per_round[i] / 80 # Defenders should care a lot about losing points
+                                rw += self.game_engine.points_per_round[i] / 60 # Defenders should care a lot about losing points
                         else:
                             if self.game_engine.points_per_round[i] <= 0:
-                                rw -= self.game_engine.points_per_round[i] / 80 # Opponents are happier when earning points
+                                rw -= self.game_engine.points_per_round[i] / 60 # Opponents are happier when earning points
                             else:
                                 rw -= self.game_engine.points_per_round[i] / 80 # Opponents are not so sad when they lose points
                         
@@ -300,7 +303,8 @@ class Simulation:
                 enable_chaodi=self.game_engine.enable_chaodi,
                 enable_combos=False,
                 is_warmup_game=True,
-                oracle_value=self.oracle_value
+                oracle_value=self.oracle_value,
+                combo_penalty=self.combo_penalty
             )
         else:
             self.game_engine = Game(
@@ -309,7 +313,8 @@ class Simulation:
                 enable_chaodi=self.game_engine.enable_chaodi,
                 enable_combos=self.game_engine.enable_combos,
                 tutorial_prob=self.tutorial_prob,
-                oracle_value=self.oracle_value
+                oracle_value=self.oracle_value,
+                combo_penalty=self.combo_penalty
             )
         self.main_history.clear()
         self.declaration_history.clear()

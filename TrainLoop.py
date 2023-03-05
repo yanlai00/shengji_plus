@@ -21,7 +21,7 @@ global_kitty_queue = ctx.Queue(maxsize=25)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0, log_file=''):
+def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon=0.01, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, game_count=0, log_file='', combo_penalty=0.1):
     logging.getLogger().setLevel(logging.DEBUG)
     logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
     train_sim = Simulation(
@@ -36,7 +36,8 @@ def sampler(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, disc
         tutorial_prob=tutorial_prob,
         oracle_duration=oracle_duration,
         explore=explore,
-        game_count=game_count
+        game_count=game_count,
+        combo_penalty=combo_penalty
     )
     while True:
         local_main, local_declare, local_kitty, local_chaodi = [], [], [], []
@@ -105,7 +106,7 @@ def evaluator(idx: int, main_agent, declare_agent, kitty_agent, chaodi_agent, ev
     
 
 
-def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, dynamic_kitty=False, max_games=500000):
+def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, use_hash_exploration=False, hash_length=16, model_type='mc', tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, warmup_games=0, tutorial_prob=0.0, oracle_duration=0, explore=False, dynamic_kitty=False, max_games=500000, combo_penalty=0.1):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -303,7 +304,7 @@ def train(games: int, model_folder: str, eval_only: bool, eval_size: int, compar
     if not eval_only:
         processes_count = 10 if model_type == 'mc' and not combos else 6
         for i in range(1 if single_process else processes_count):
-            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_times, warmup_games // processes_count, tutorial_prob, oracle_duration // processes_count, explore, iterations // processes_count, f"{model_folder}/debug{i}.log"))
+            actor = ctx.Process(target=sampler, args=(i, main_agent, declare_agent, kitty_agent, chaodi_agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, combos, epsilon, reuse_times, warmup_games // processes_count, tutorial_prob, oracle_duration // processes_count, explore, iterations // processes_count, f"{model_folder}/debug{i}.log", combo_penalty))
             actor.start()
             actor_processes.append(actor)
             
@@ -454,5 +455,6 @@ if __name__ == '__main__':
     parser.add_argument('--explore', action='store_true')
     parser.add_argument('--dynamic-kitty', action='store_true')
     parser.add_argument('--max-games', type=int, default=500000)
+    parser.add_argument('--combo-penalty', type=float, default=0.1)
     args = parser.parse_args()
-    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.warmup_games, args.tutorial_prob, args.oracle_duration, args.explore, args.dynamic_kitty, args.max_games)
+    train(args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.hash_exploration, args.hash_length, args.model_type, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.warmup_games, args.tutorial_prob, args.oracle_duration, args.explore, args.dynamic_kitty, args.max_games, args.combo_penalty)

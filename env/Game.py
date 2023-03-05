@@ -11,7 +11,7 @@ from .CardSet import CardSet, MoveType
 import logging
 
 class Game:
-    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, tutorial_prob=0.0, oracle_value=0.0) -> None:
+    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, tutorial_prob=0.0, oracle_value=0.0, combo_penalty=0.1) -> None:
         # Player information
         self.hands = {
             AbsolutePosition.NORTH: CardSet(),
@@ -68,7 +68,7 @@ class Game:
         self.is_warmup_game = is_warmup_game # In a warm up game, we don't allow declarations for fairness
         self.oracle_value = oracle_value # the coefficient for the oracle
         self.consecutive_moves = 0
-
+        self.combo_penalty = combo_penalty
     @property
     def dominant_suit(self):
         return self.declarations[-1].suite if self.declarations else TrumpSuite.XJ
@@ -333,7 +333,7 @@ class Game:
                         self.public_cards[player_position]._cards[card] = count
 
                 logging.debug(f"Combo move failed. Player {player_position.value} forced to play {penalty_move}")
-                return player_position.next_position, -0.1
+                return player_position.next_position, -self.combo_penalty
         elif isinstance(action, FollowAction):
             logging.debug(f"Round {len(self.round_history)}: {player_position.value} follows with {action.cardset}")
             lead_position, moves = self.round_history[-1]
