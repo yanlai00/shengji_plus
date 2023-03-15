@@ -27,8 +27,8 @@ actor_processes = []
 
 # Parallelized data sampling
 def sampler(idx: int, player: SJAgent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, enable_chaodi: bool, enable_combos: bool, epsilon=0.02, reuse_times=0, oracle_duration=0, game_count=0, log_file='', combo_penalty=0.1):
-    logging.getLogger().setLevel(logging.DEBUG)
-    logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
+    logging.getLogger().setLevel(logging.ERROR)
+    # logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
     train_sim = Simulation(
         player1=player,
         player2=None,
@@ -67,9 +67,9 @@ def sampler(idx: int, player: SJAgent, discount, decay_factor, global_main_queue
         global_kitty_queue.put(local_kitty)
 
 def evaluator(idx: int, player1: SJAgent, player2: SJAgent, enable_chaodi: bool, enable_combos: bool, eval_size: int, eval_results_queue: Queue, verbose=False, learn_from_eval=False, log_file=''):
-    logging.getLogger().setLevel(logging.DEBUG)
-    if not verbose:
-        logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
+    logging.getLogger().setLevel(logging.ERROR)
+    # if not verbose:
+    #     logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
     random.seed(idx)
     eval_sim = Simulation(
         player1=player1,
@@ -120,7 +120,7 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
 
     if agent_type == 'dmc':
         agent = DMCAgent(model_folder, use_oracle=oracle_duration_input > 0)
-        agent.load_models_from_disk(train_models)
+        loaded_from_disk, iterations = agent.load_models_from_disk(train_models)
     elif agent_type == 'dqn':
         agent = DQNAgent(model_folder)
         raise NotImplementedError()
@@ -190,8 +190,8 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     else:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.basicConfig(format="%(process)d %(message)s", filename=f'{model_folder}/debug.log', encoding='utf-8', level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.ERROR)
+        # logging.basicConfig(format="%(process)d %(message)s", filename=f'{model_folder}/debug.log', encoding='utf-8', level=logging.DEBUG)
     
     # Record the command used to run the script
     if not eval_only:

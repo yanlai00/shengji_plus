@@ -250,15 +250,16 @@ class DMCAgent(SJAgent):
         try:
             with open(f'{self.name}/state.pkl', mode='rb') as f:
                 state = pickle.load(f)
-                use_oracle = state['oracle_duration'] > 0
+                self.main_module.use_oracle = state['oracle_duration'] > 0
             with open(f'{self.name}/stats.pkl', mode='rb') as f:
                 stats = pickle.load(f)
                 iterations = stats[-1]['iterations']
                 print(f"Using checkpoint at iteration {iterations}")
             # If resuming from checkpoint, subtract iterations from oracle duration
-            oracle_duration = max(0, oracle_duration - iterations)
+            oracle_duration = max(0, state['oracle_duration'] - iterations)
             print(f"Resuming with remaining oracle duration {oracle_duration}")
-        except:
+        except Exception as e:
+            print(e)
             loaded_models = False
         main_model: nn.Module = train_models.MainModel(use_oracle=self.main_module.use_oracle).cuda()
         if os.path.exists(f'{self.name}/main.pt'):
@@ -268,14 +269,14 @@ class DMCAgent(SJAgent):
             loaded_models = False
         self.main_module.load_model(main_model)
         
-        return loaded_models
+        return loaded_models, stats[-1]['iterations'] if loaded_models else 0
 
     def save_models_to_disk(self):
-        torch.save(self.declare_module._model, self.name + '/declare.pt')
-        torch.save(self.kitty_module._model, self.name + '/kitty.pt')
+        torch.save(self.declare_module._model.state_dict(), self.name + '/declare.pt')
+        torch.save(self.kitty_module._model.state_dict(), self.name + '/kitty.pt')
         if self.chaodi_module._model is not None:
-            torch.save(self.chaodi_module._model, self.name + '/chaodi.pt')
-        torch.save(self.main_module._model, self.name + '/main.pt')
+            torch.save(self.chaodi_module._model.state_dict(), self.name + '/chaodi.pt')
+        torch.save(self.main_module._model.state_dict(), self.name + '/main.pt')
     
     def clear_loss_histories(self):
         self.declare_module.train_loss_history.clear()
