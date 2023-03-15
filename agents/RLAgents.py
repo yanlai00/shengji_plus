@@ -4,68 +4,18 @@ import pickle
 import random
 import sys
 from typing import Deque, List, Tuple
-import torch
 import numpy as np
 from env.CardSet import CardSet, MoveType
 
-from networks.StateAutoEncoder import StateAutoEncoder
-
-
-from .Agent import SJAgent
+from .Agent import SJAgent, DeepAgent
 
 sys.path.append('.')
-from env.Actions import Action, AppendLeadAction, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, EndLeadAction, FollowAction, LeadAction, PlaceAllKittyAction, PlaceKittyAction
+from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceAllKittyAction, PlaceKittyAction
 from env.utils import ORDERING_INDEX, Stage, softmax
 from env.Observation import Observation
 from networks.Models import *
 
-class DeepAgent(SJAgent):
-    def __init__(self, name: str, model: nn.Module, batch_size=64, hash_model: StateAutoEncoder = None, tau=0.1, use_oracle=False) -> None:
-        super().__init__(name)
 
-        self.model = model
-        self.eval_model = pickle.loads(pickle.dumps(self.model)).to(next(model.parameters()).device)
-        self.eval_model.eval().share_memory()
-        self.batch_size = batch_size
-        self.optimizer = torch.optim.RMSprop(model.parameters(), lr=0.0001, alpha=0.99, eps=1e-5)
-        self.loss_fn = nn.MSELoss()
-        self.train_loss_history: List[float] = []
-        self.hash_loss_history: List[float] = []
-        self.hash_model = hash_model
-        self.tau = tau
-        self.use_oracle = use_oracle
-    
-    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float]]):
-        raise NotImplementedError
-    
-    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
-        splits = int(len(samples) / self.batch_size)
-        for subsamples in np.array_split(samples, max(1, splits), axis=0):
-            *args, rewards = self.prepare_batch_inputs(subsamples)
-            pred = self.model(*args)
-            loss = self.loss_fn(pred, rewards)
-            self.optimizer.zero_grad()
-            loss.backward()
-            if torch.isnan(loss):
-                def init_weights(m):
-                    if isinstance(m, nn.Linear):
-                        nn.init.xavier_uniform_(m.weight.data)
-                self.model.apply(init_weights)
-                # pred = self.model(*args)
-                # loss = self.loss_fn(pred, rewards)
-                # self.optimizer.zero_grad()
-                # loss.backward()
-                print(f"Model {self} encountered nan, reset weights to random.")
-            else:
-                nn.utils.clip_grad_norm_(self.model.parameters(), 80)
-                self.optimizer.step()
-                self.train_loss_history.append(loss.detach().item())
-
-            if self.hash_model is not None:
-                hash_loss = self.hash_model.update(args[0]) # args[0] is the state+action tensor representation
-                self.hash_loss_history.append(hash_loss)
-        for param, target_param in zip(self.model.parameters(), self.eval_model.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 class DeclareAgent(DeepAgent):
     def __init__(self, name: str, model: DeclarationModel, batch_size=64, tau=0.995) -> None:
@@ -328,18 +278,14 @@ class ChaodiAgent(DeepAgent):
      
     
 class MainAgent(DeepAgent):
-    def __init__(self, name: str, model: MainModel, batch_size=64, hash_model: StateAutoEncoder = None, tau=0.1) -> None:
-        super().__init__(name, model, batch_size, hash_model, tau, use_oracle=getattr(model, 'use_oracle', False))
+    def __init__(self, name: str, model: MainModel, batch_size=64, tau=0.1) -> None:
+        super().__init__(name, model, batch_size, tau, use_oracle=model.use_oracle)
         self.model: MainModel
     
     def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
-            x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0, None)], training=training)
-            if self.hash_model and training:
-                exploration_bonus = self.hash_model.exploration_bonus(x_batch)
-            else:
-                exploration_bonus = 0
-            return self.eval_model(x_batch, history_batch) + exploration_bonus
+            x_batch, history_batch, _ = self.prepare_batch_inputs([(obs, a, 0, None)])
+            return self.eval_model(x_batch, history_batch)
 
         if explore:
             return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
@@ -349,7 +295,7 @@ class MainAgent(DeepAgent):
         else:
             return max(obs.actions, key=reward)
     
-    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]], training=True):
+    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]]):
         if self.use_oracle:
             x_batch = torch.zeros((len(samples), 1089 + 108)) # additionally provide other players' hands
         else:
@@ -358,7 +304,7 @@ class MainAgent(DeepAgent):
         gt_rewards = torch.zeros((len(samples), 1))
         for i, (obs, ac, rw, _) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_dynamic_tensor # obs.historical_moves_tensor
-            cardset = ac.move.cardset if isinstance(ac, LeadAction) or isinstance(ac, AppendLeadAction) or isinstance(ac, EndLeadAction) else ac.cardset
+            cardset = ac.move.cardset if isinstance(ac, LeadAction) else ac.cardset
             state_tensor = torch.cat([
                 obs.dynamic_hand_tensor, # (108,),
                 obs.dealer_position_tensor, # (4,)
@@ -373,10 +319,8 @@ class MainAgent(DeepAgent):
                 obs.dominates_all_tensor(cardset), # (1,)
             ])
 
-            if self.use_oracle and training:
+            if self.use_oracle:
                 state_tensor = torch.cat([obs.oracle_cardsets, state_tensor])
-            elif self.use_oracle and not training:
-                state_tensor = torch.cat([torch.zeros(108 * 3), state_tensor])
 
             x_batch[i] = torch.cat([state_tensor, ac.dynamic_tensor(obs.dominant_suit, obs.dominant_rank)])
             history_batch[i] = historical_moves
@@ -386,10 +330,9 @@ class MainAgent(DeepAgent):
 
 # Q learning
 class QLearningMainAgent(DeepAgent):
-    def __init__(self, name: str, model: MainModel, value_model: ValueModel, batch_size=50, discount=0.99, hash_model: StateAutoEncoder = None, tau=0.995) -> None:
+    def __init__(self, name: str, model: MainModel, value_model: ValueModel, batch_size=50, discount=0.99, tau=0.995) -> None:
         super().__init__(name, model, batch_size, tau=tau)
         
-        self.hash_model = hash_model
         self.discount = discount
         self.value_network = value_model
         self.value_optimizer = torch.optim.RMSprop(self.value_network.parameters(), lr=0.0001, alpha=0.99, eps=1e-5)
@@ -398,11 +341,7 @@ class QLearningMainAgent(DeepAgent):
     def act(self, obs: Observation, explore=False, epsilon=None, training=True):
         def reward(a: Action):
             x_batch, history_batch, *_ = self.prepare_batch_inputs([(obs, a, 0, None)])
-            if self.hash_model and training:
-                exploration_bonus = self.hash_model.exploration_bonus(x_batch)
-            else:
-                exploration_bonus = 0
-            return self.eval_model(x_batch, history_batch) + exploration_bonus
+            return self.eval_model(x_batch, history_batch)
 
         if explore:
             return random.choices(obs.actions, softmax([reward(a).cpu().item() for a in obs.actions]))[0]
@@ -455,7 +394,7 @@ class QLearningMainAgent(DeepAgent):
         terminals = torch.zeros(len(samples), 1)
         for i, (obs, ac, rw, next_obs) in enumerate(samples):
             historical_moves, current_moves = obs.historical_moves_dynamic_tensor
-            cardset = ac.move.cardset if isinstance(ac, LeadAction) or isinstance(ac, AppendLeadAction) or isinstance(ac, EndLeadAction) else ac.cardset
+            cardset = ac.move.cardset if isinstance(ac, LeadAction) else ac.cardset
             state_tensor = torch.cat([
                 obs.dynamic_hand_tensor,
                 obs.dealer_position_tensor, # (4,)

@@ -1,6 +1,6 @@
 # Defines all potential actions that a player can take during a game.
 from .CardSet import CardSet, MoveType
-from .utils import LETTER_RANK, ORDERING, ORDERING_INDEX, CardSuit, Declaration, TrumpSuite, get_rank, get_suit
+from .utils import LETTER_RANK, ORDERING, ORDERING_INDEX, CardSuit, Declaration, TrumpSuit, get_rank, get_suit
 import torch
 
 class Action:
@@ -18,7 +18,7 @@ class DeclareAction(Action):
     def __init__(self, declaration: Declaration) -> None:
         self.declaration = declaration
     def __repr__(self) -> str:
-        return f"DeclareAction({self.declaration.suite}, lv={self.declaration.level})"
+        return f"DeclareAction({self.declaration.suit}, lv={self.declaration.level})"
     @property
     def tensor(self) -> torch.Tensor:
         "Shape: (7,)"
@@ -50,21 +50,21 @@ class PlaceKittyAction(Action):
         "Shape: (1,)"
         return torch.tensor(ORDERING_INDEX[self.card])
     
-    def get_dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+    def get_dynamic_tensor(self, dominant_suit: TrumpSuit, dominant_rank: int):
         card_rank = get_rank(self.card, dominant_suit, dominant_rank) # 3 - 14
         card_suit = get_suit(self.card, dominant_suit, dominant_rank)
 
         index = 0
-        for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
+        for suit in [TrumpSuit.DIAMOND, TrumpSuit.CLUB, TrumpSuit.HEART, TrumpSuit.SPADE]:
             if suit != dominant_suit:
                 if suit == card_suit:
                     return torch.tensor(index + card_rank - 3)
                 else:
                     index += 12
                 
-        if self.card == TrumpSuite.XJ:
+        if self.card == TrumpSuit.XJ:
             return torch.tensor(52)
-        elif self.card == TrumpSuite.DJ:
+        elif self.card == TrumpSuit.DJ:
             return torch.tensor(53)
         
         if not dominant_suit.is_NT:
@@ -76,7 +76,7 @@ class PlaceKittyAction(Action):
         raw_suit = self.card[-1]
         if raw_suit == dominant_suit:
             return torch.tensor(51)
-        for suit in [TrumpSuite.DIAMOND, TrumpSuite.CLUB, TrumpSuite.HEART, TrumpSuite.SPADE]:
+        for suit in [TrumpSuit.DIAMOND, TrumpSuit.CLUB, TrumpSuit.HEART, TrumpSuit.SPADE]:
             if suit != dominant_suit:
                 if raw_suit == suit:
                     return torch.tensor(index)
@@ -105,7 +105,7 @@ class ChaodiAction(Action):
     @property
     def tensor(self) -> torch.Tensor:
         "Shape: (6,)"
-        return self.declaration.suite.tensor
+        return self.declaration.suit.tensor
 
 class DontChaodiAction(Action):
     "Skip chaodi."
@@ -123,11 +123,14 @@ class LeadAction(Action):
     def __repr__(self) -> str:
         return f"LeadAction({self.move})"
     @property
+    def cardset(self):
+        return self.move.cardset
+    @property
     def tensor(self) -> torch.Tensor:
         "Shape: (108,)"
         return self.move.cardset.tensor
     
-    def dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+    def dynamic_tensor(self, dominant_suit: TrumpSuit, dominant_rank: int):
         return self.move.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)
     
 class AppendLeadAction(Action):
@@ -139,11 +142,14 @@ class AppendLeadAction(Action):
     def __repr__(self) -> str:
         return f"AppendLeadAction({self.current} -> {self.move})"
     @property
+    def cardset(self):
+        return self.move.cardset
+    @property
     def tensor(self) -> torch.Tensor:
         "Shape: (108,)"
         return self.move.cardset.tensor
     
-    def dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+    def dynamic_tensor(self, dominant_suit: TrumpSuit, dominant_rank: int):
         return self.move.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)
 
 class EndLeadAction(Action):
@@ -152,11 +158,14 @@ class EndLeadAction(Action):
     def __repr__(self) -> str:
         return f"EndLeadAction({self.move})"
     @property
+    def cardset(self):
+        return self.move.cardset
+    @property
     def tensor(self) -> torch.Tensor:
         "Shape: (108,)"
         return self.move.cardset.tensor
     
-    def dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+    def dynamic_tensor(self, dominant_suit: TrumpSuit, dominant_rank: int):
         return self.move.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)
 
 class FollowAction(Action):
@@ -170,5 +179,5 @@ class FollowAction(Action):
         "Shape: (108,)"
         return self.cardset.tensor
     
-    def dynamic_tensor(self, dominant_suit: TrumpSuite, dominant_rank: int):
+    def dynamic_tensor(self, dominant_suit: TrumpSuit, dominant_rank: int):
         return self.cardset.get_dynamic_tensor(dominant_suit, dominant_rank)

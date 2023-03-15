@@ -3,7 +3,7 @@
 from typing import List, Tuple
 from env.Actions import Action
 from env.CardSet import CardSet
-from env.utils import LETTER_RANK, AbsolutePosition, Declaration, RelativePosition, Stage, TrumpSuite
+from env.utils import LETTER_RANK, AbsolutePosition, Declaration, RelativePosition, Stage, TrumpSuit
 import torch
 
 class Observation:
@@ -39,7 +39,7 @@ class Observation:
     
     @property
     def dominant_suit(self):
-        return self.declaration.suite if self.declaration else TrumpSuite.XJ
+        return self.declaration.suit if self.declaration else TrumpSuit.XJ
 
     @property
     def points_tensor(self):
@@ -96,7 +96,7 @@ class Observation:
     
     @property
     def dynamic_hand_tensor(self):
-        return self.hand.get_dynamic_tensor(self.declaration.suite if self.declaration else TrumpSuite.XJ, self.dominant_rank)
+        return self.hand.get_dynamic_tensor(self.declaration.suit if self.declaration else TrumpSuit.XJ, self.dominant_rank)
     
     @property
     def unplayed_cards_tensor(self):
@@ -140,10 +140,10 @@ class Observation:
     @property
     def perceived_trump_cardsets(self):
         "Return a (36,) tensor describing the dominant rank trump cards each player is known to have."
-        diamond_card = LETTER_RANK[self.dominant_rank] + TrumpSuite.DIAMOND
-        club_card = LETTER_RANK[self.dominant_rank] + TrumpSuite.CLUB
-        heart_card = LETTER_RANK[self.dominant_rank] + TrumpSuite.HEART
-        spade_card = LETTER_RANK[self.dominant_rank] + TrumpSuite.SPADE
+        diamond_card = LETTER_RANK[self.dominant_rank] + TrumpSuit.DIAMOND
+        club_card = LETTER_RANK[self.dominant_rank] + TrumpSuit.CLUB
+        heart_card = LETTER_RANK[self.dominant_rank] + TrumpSuit.HEART
+        spade_card = LETTER_RANK[self.dominant_rank] + TrumpSuit.SPADE
 
         trump_card_counts = []
 
@@ -207,12 +207,12 @@ class Observation:
     def current_dominating_player_index(self):
         encoding = torch.zeros(3) # first 3 represent which players have played. last 3 represent who's the biggest
         if self.round_history[-1][1]:
-            winning_index = CardSet.round_winner(self.round_history[-1][1], self.declaration.suite if self.declaration else TrumpSuite.XJ, self.dominant_rank)
+            winning_index = CardSet.round_winner(self.round_history[-1][1], self.declaration.suit if self.declaration else TrumpSuit.XJ, self.dominant_rank)
             encoding[3 - len(self.round_history[-1][1]) + winning_index] = 1
         return encoding
 
     def dominates_all_tensor(self, cardset: CardSet):
-        if CardSet.round_winner(self.round_history[-1][1] + [cardset], self.declaration.suite if self.declaration else TrumpSuite.XJ, self.dominant_rank) == len(self.round_history[-1][1]):
+        if CardSet.round_winner(self.round_history[-1][1] + [cardset], self.declaration.suit if self.declaration else TrumpSuit.XJ, self.dominant_rank) == len(self.round_history[-1][1]):
             return torch.tensor([1])
         else:
             return torch.tensor([0])

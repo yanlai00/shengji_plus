@@ -3,233 +3,65 @@ import logging
 import random
 import sys
 from typing import List, Tuple
+import numpy as np
+import pickle
+import torch
+from torch import nn
 
 sys.path.append('.')
 from env.Observation import Observation
-from env.Actions import Action, AppendLeadAction, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, EndLeadAction, FollowAction, LeadAction, PlaceKittyAction
-from env.utils import AbsolutePosition, CardSuit, Declaration, Stage, TrumpSuite, get_rank, get_suit
+from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceKittyAction
+from env.utils import Stage
 from env.CardSet import CardSet, MoveType
 
 from env.utils import AbsolutePosition
 
+class StageModule:
+    def act(self, obs: Observation, epsilon=None, training=True):
+        return NotImplementedError()
+
+    def load_model(self, model: nn.Module):
+        raise NotImplementedError()
+
+    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
+        raise NotImplementedError()
+
 class SJAgent:
     def __init__(self, name: str) -> None:
         self.name = name
+
+        self.declare_module: StageModule = None
+        self.kitty_module: StageModule = None
+        self.chaodi_module: StageModule = None
+        self.main_module: StageModule = None
     
-    def act(self, obs: Observation, training=True):
-        raise NotImplementedError
-    
-    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
-        raise NotImplementedError
-
-class RandomAgent(SJAgent):
-    def act(self, obs: Observation, **kwargs):
-        non_combo: List[Action] = []
-        combo: List[Action] = []
-        others: List[Action] = []
-        for a in obs.actions:
-            if isinstance(a, LeadAction) or isinstance(a, AppendLeadAction) or isinstance(a, EndLeadAction):
-                if isinstance(a, AppendLeadAction):
-                    combo.append(a)
-                else:
-                    non_combo.append(a)
-            else:
-                others.append(a)
-        
-        if others:
-            return random.choice(others)
-        elif not non_combo:
-            return random.choice(combo)
-        elif not combo:
-            return random.choice(non_combo)
-        else:
-            return random.choice(non_combo) # if random.random() > 0.99 else random.choice(non_combo)
-
-class InteractiveAgent(SJAgent):
-    def act(self, obs: Observation, **kwargs):
-        if len(obs.actions) == 1 and obs.stage == Stage.declare_stage: return obs.actions[0]
-        print(f'current hand ({obs.position.value}):', obs.hand)
-        for i, a in enumerate(obs.actions):
-            print(f'{i:>5}\t{a}')
-        while True:
-            idx = input("Enter action index: ")
-            try:
-                return obs.actions[int(idx)]
-            except:
-                continue
-            
-
-class StrategicAgent(SJAgent):
-    def act(self, obs: Observation, **kwargs):
-        dominant_suite = obs.declaration.suite if obs.declaration else TrumpSuite.XJ
+    def act(self, obs: Observation, epsilon=None, training=True):
+        assert self.declare_module is not None and self.kitty_module is not None and self.main_module is not None, "At least one required model is not loaded"
         if obs.stage == Stage.declare_stage:
-            best_declare_option = None
-            best_relative_count = 0
-            for declare_action in obs.actions:
-                if isinstance(declare_action, DeclareAction) and declare_action.declaration.suite not in ['XJ', 'DJ']:
-                    trump_count = obs.hand.count_suite(CardSuit.TRUMP, declare_action.declaration.suite, obs.dominant_rank)
-                    if trump_count > best_relative_count:
-                        best_relative_count = trump_count
-                        best_declare_option = declare_action
-            if best_relative_count > 5 and best_relative_count / obs.hand.size >= 0.4:
-                return best_declare_option
-            else:
-                return DontDeclareAction()
-        if obs.stage == Stage.kitty_stage:
-            best_actions: List[Tuple[int, Action]] = []
-            second_best_actions: List[Tuple[int, Action]] = []
-            worse_actions: List[Tuple[int, Action]] = []
-            current_suite = obs.declaration.suite if obs.declaration else TrumpSuite.XJ
-
-            # count suite
-            suit_counts = {}
-            for suit in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
-                suit_count = obs.hand.count_suite(suit, obs.dominant_suit, obs.dominant_rank)
-                if suit_count > 0:
-                    suit_counts[suit] = suit_count
-            
-            suit_order = sorted(suit_counts.items(), key=lambda x: x[1])
-
-            for action in obs.actions:
-                assert isinstance(action, PlaceKittyAction)
-                action: PlaceKittyAction
-                
-                rank = get_rank(action.card, current_suite, obs.dominant_rank)
-                suit = get_suit(action.card, current_suite, obs.dominant_rank)
-                
-                # score = 0
-
-                # if action.count == 1:
-                #     score += 5
-                
-                #     if rank <= 9:
-                #         score += 5
-                #     elif rank <= 13:
-                #         score += 2
-                # elif rank <= 6:
-                #     score += 3
-                
-                # if suit == CardSuit.TRUMP:
-                #     score -= 20
-                
-                # if suit == suit_order[0][0]:
-                #     score += 10
-                # elif suit == suit_order[1][0]:
-                #     score += 5
-                # elif suit == suit_order[-1][0]:
-                #     score -= 5
-                
-                # if score >= 10:
-                #     best_actions.append((rank, action))
-                # elif score > 0:
-                #     second_best_actions.append((rank, action))
-                # else:
-                #     worse_actions.append((rank, action))
-
-                # Best actions
-                if suit != CardSuit.TRUMP and rank <= 12 and action.count == 1:
-                    best_actions.append((rank, action))
-                
-                # Second best actions
-                elif suit != CardSuit.TRUMP and (rank <= 6 and action.count == 2) or (rank <= 13 and action.count == 1):
-                    second_best_actions.append((rank, action))
-                elif suit == CardSuit.TRUMP and rank <= 7:
-                    worse_actions.append((rank, action))
-            
-            if best_actions:
-                return min(best_actions, key=lambda x: x[0])[1]
-            elif second_best_actions:
-                return min(second_best_actions, key=lambda x: x[0])[1]
-            else:
-                return min(worse_actions, key=lambda x: x[0])[1]
+            return self.declare_module.act(obs, epsilon, training)
+        elif obs.stage == Stage.kitty_stage:
+            return self.kitty_module.act(obs, epsilon, training)
         elif obs.stage == Stage.chaodi_stage:
-            best_suite_action: Action = None
-            nt_action: Action = None
-            current_trump_count = obs.hand.count_suite(CardSuit.TRUMP, dominant_suite, obs.dominant_rank)
-            best_chaodi_trump_count = 0
-            for option in obs.actions:
-                if isinstance(option, ChaodiAction):
-                    if option.declaration.suite in ('XJ', 'DJ'):
-                        nt_action = option
-                    else:
-                        new_trump_count = obs.hand.count_suite(CardSuit.TRUMP, option.declaration.suite, obs.dominant_rank)
-                        best_chaodi_trump_count = max(best_chaodi_trump_count, new_trump_count)
-            
-            if best_suite_action and best_chaodi_trump_count >= 10 and best_chaodi_trump_count + 2 >= current_trump_count:
-                return best_suite_action
-            elif nt_action and current_trump_count < 12:
-                return nt_action
-            else:
-                return DontChaodiAction()
-
+            assert self.chaodi_module is not None, "chaodi module must be configured when chaodi mode is turned on"
+            return self.chaodi_module.act(obs, epsilon, training)
+        elif obs.stage == Stage.main_stage:
+            return self.main_module.act(obs, epsilon, training)
         else:
-            if obs.leads_current_round:
-                optimal_actions = []
-                second_best_actions = []
-                other_actions = []
-                for action in obs.actions:
-                    action: LeadAction
-                    d = action.move.cardset.decompose(dominant_suite, obs.dominant_rank)
-                    
-                    # For simplicity, this agent doesn't play combos
-                    if len(d) > 1:
-                        other_actions.append(action)
-                        # # If the combo is unbeatable (unless using trump cards)
-                        # if CardSet.is_bigger_than(obs.unplayed_cards, action.move, obs.dominant_suit, obs.dominant_rank) is None:
-                        #     # If the combo contains a pair of a tractor, then it's probably a good move to play
-                        #     if not all([isinstance(component, MoveType.Single) for component in d]):
-                        #         optimal_actions.append(action)
-                        #     else:
-                        #         second_best_actions.append(action)
-                        # else:
-                        #     other_actions.append(action)
-                    elif action.move.cardset.count_suite(CardSuit.TRUMP, dominant_suite, obs.dominant_rank) == 0:
-                        min_rank = d[0].cardset.min_rank(dominant_suite, obs.dominant_rank)
-                        if isinstance(d[0], MoveType.Tractor) or isinstance(d[0], MoveType.Pair) and min_rank >= 8 and isinstance(d[0], MoveType.Single) and (min_rank == 14 or obs.dominant_rank == 14 and min_rank == 13):
-                            optimal_actions.append(action)
-                        elif isinstance(d[0], MoveType.Pair) or d[0].cardset.min_rank(dominant_suite, obs.dominant_rank) > 10:
-                            second_best_actions.append(action)
-                        else:
-                            other_actions.append(action)
-                    else:
-                        if action.move.cardset.total_points() == 0:
-                            optimal_actions.append(action)
-                        else:
-                            other_actions.append(action)
-                    
-                    if optimal_actions:
-                        return random.choice(optimal_actions)
-                    elif second_best_actions:
-                        return random.choice(second_best_actions)
-                    else:
-                        return other_actions[0]
-                            
-            else:
-                current_round_points = 0
-                dominant_suite = obs.declaration.suite if obs.declaration else TrumpSuite.XJ
-                for h in obs.round_history[-1][1]:
-                    current_round_points += h.total_points()
-                
-                good_action_choices = []
-                other_action_choices = []
-                lead_index = CardSet.round_winner(obs.round_history[-1][1], dominant_suite, obs.dominant_rank)
-                teammate_is_biggest = len(obs.round_history[-1][1]) - lead_index == 2
-                
-                for action in obs.actions:
-                    if not isinstance(action, FollowAction): continue
+            raise NotImplementedError()
+    
+    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]], stage: Stage):
+        raise NotImplementedError()
 
-                    is_dominating = CardSet.round_winner(obs.round_history[-1][1] + [action.cardset], dominant_suite, obs.dominant_rank) == len(obs.round_history[-1][1])
-                    if (current_round_points > 0 or len(obs.round_history[-1][1]) == 2) and not teammate_is_biggest:
-                        if is_dominating:
-                            good_action_choices.append(action)
-                        else:
-                            other_action_choices.append(action)
-                    else:
-                        good_action_choices.append(action)
-                
-                if good_action_choices:
-                    return random.choice(good_action_choices)
-                else:
-                    return random.choice(other_action_choices)
-                
+    def optimizer_states(self):
+        return {}
+
+    def load_optimizer_states(self, state):
+        pass
+    
+    # Try to load models from disk. Return whether the models were loaded successfully.
+    def load_models_from_disk(self) -> bool:
+        raise NotImplementedError()
+
+    def save_models_to_disk(self):
+        raise NotImplementedError()
 

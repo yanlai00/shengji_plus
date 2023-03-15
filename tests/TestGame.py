@@ -12,7 +12,7 @@ from networks.Models import ChaodiModel, DeclarationModel, KittyModel, MainModel
 from Simulation import Simulation
 from agents.Agent import RandomAgent, SJAgent, StrategicAgent
 from env.Actions import DeclareAction, DontDeclareAction, PlaceKittyAction
-from env.utils import AbsolutePosition, Declaration, TrumpSuite
+from env.utils import AbsolutePosition, Declaration, TrumpSuit
 from env.CardSet import CardSet
 from env.Game import Game
 

@@ -8,7 +8,7 @@ import numpy as np
 ORDERING = ['A♦', 'K♦', 'Q♦', 'J♦', '10♦', '9♦', '8♦', '7♦', '6♦', '5♦', '4♦', '3♦', '2♦', 'A♣', 'K♣', 'Q♣', 'J♣', '10♣', '9♣', '8♣', '7♣', '6♣', '5♣', '4♣', '3♣', '2♣', 'A♥', 'K♥', 'Q♥', 'J♥', '10♥', '9♥', '8♥', '7♥', '6♥', '5♥', '4♥', '3♥', '2♥', 'A♠', 'K♠', 'Q♠', 'J♠', '10♠', '9♠', '8♠', '7♠', '6♠', '5♠', '4♠', '3♠', '2♠', 'XJ', 'DJ']
 ORDERING_INDEX = {k:i for i, k in enumerate(ORDERING)}
 
-class TrumpSuite(str, Enum):
+class TrumpSuit(str, Enum):
     "All the possible suites for a trump declaration."
     CLUB = "♣"
     SPADE = "♠"
@@ -73,48 +73,48 @@ class Stage(str, Enum):
     declare_stage = 'DECLARE'
     kitty_stage = 'KITTY'
     chaodi_stage = 'CHAODI'
-    play_stage = 'PLAY'
+    main_stage = 'PLAY'
 
 class Declaration:
     "Contains information about the trump suite being declared."
-    def __init__(self, suite: TrumpSuite, level: int, position: AbsolutePosition, relative_position: RelativePosition = None) -> None:
-        self.suite = suite
+    def __init__(self, suite: TrumpSuit, level: int, position: AbsolutePosition, relative_position: RelativePosition = None) -> None:
+        self.suit = suite
         self.level = level
         self.absolute_position: AbsolutePosition = position
         self.relative_position = relative_position # Depends on the position of the player that observes this declaration
 
     def __repr__(self) -> str:
-        return f"Declaration(player={self.absolute_position}, cards={self.suite.value} x{1 + int(self.level > 1)})"
+        return f"Declaration(player={self.absolute_position}, cards={self.suit.value} x{1 + int(self.level > 1)})"
     
     def relative_to(self, position: AbsolutePosition):
-        return Declaration(self.suite, self.level, self.absolute_position, self.absolute_position.relative_to(position))
+        return Declaration(self.suit, self.level, self.absolute_position, self.absolute_position.relative_to(position))
     
     @property
     def tensor(self):
         "A tensor of shape (7,) representing the suite and multiplicity of the declaration."
-        return torch.cat([self.suite.tensor, torch.tensor([int(self.level > 1)])])
+        return torch.cat([self.suit.tensor, torch.tensor([int(self.level > 1)])])
     
     def get_card(self, dominant_rank: int):
         rank_symbol = LETTER_RANK[dominant_rank]
         count = 1 if self.level == 0 else 2
-        if self.suite == TrumpSuite.XJ or self.suite == TrumpSuite.DJ:
-            return self.suite.value, count
+        if self.suit == TrumpSuit.XJ or self.suit == TrumpSuit.DJ:
+            return self.suit.value, count
         else:
-            return rank_symbol + self.suite.value, count
+            return rank_symbol + self.suit.value, count
 
 
     @classmethod
-    def chaodi_level(self, suite: TrumpSuite, level: int):
+    def chaodi_level(self, suite: TrumpSuit, level: int):
         if level >= 1:
-            if suite == TrumpSuite.DIAMOND:
+            if suite == TrumpSuit.DIAMOND:
                 return 1
-            elif suite == TrumpSuite.CLUB:
+            elif suite == TrumpSuit.CLUB:
                 return 2
-            elif suite == TrumpSuite.HEART:
+            elif suite == TrumpSuit.HEART:
                 return 3
-            elif suite == TrumpSuite.SPADE:
+            elif suite == TrumpSuit.SPADE:
                 return 4
-            elif suite == TrumpSuite.XJ:
+            elif suite == TrumpSuit.XJ:
                 return 5
             else: # DJ
                 return 6
@@ -140,7 +140,7 @@ LETTER_RANK = {
 
 NUMERIC_RANK = {v:k for k,v in LETTER_RANK.items()}
 
-def get_suit(card: str, dominant_suit: TrumpSuite, dominant_rank: int):
+def get_suit(card: str, dominant_suit: TrumpSuit, dominant_rank: int):
     "Determines if the card is a trump card, and if not, determines which suite it is in."
     if card == 'XJ' or card == 'DJ':
         return CardSuit.TRUMP
@@ -153,7 +153,7 @@ def get_suit(card: str, dominant_suit: TrumpSuite, dominant_rank: int):
     else:
         return suite
 
-def get_rank(card: str, dominant_suite: TrumpSuite, dominant_rank: int):
+def get_rank(card: str, dominant_suite: TrumpSuit, dominant_rank: int):
     "Get the rank of a card within its suite."
 
     if card == 'DJ':

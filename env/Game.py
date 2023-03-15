@@ -11,7 +11,7 @@ from .CardSet import CardSet, MoveType
 import logging
 
 class Game:
-    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, tutorial_prob=0.0, oracle_value=0.0, combo_penalty=0.1) -> None:
+    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, oracle_value=0.0, combo_penalty=0.1) -> None:
         # Player information
         self.hands = {
             AbsolutePosition.NORTH: CardSet(),
@@ -26,7 +26,7 @@ class Game:
             AbsolutePosition.EAST: CardSet()
         }
         self.unplayed_cards, self.card_list = CardSet.new_deck()
-        if is_warmup_game or random.random() < tutorial_prob:
+        if is_warmup_game:
             self.card_list = CardSet.get_tutorial_deck()
         else:
             self.card_list = deck or self.card_list
@@ -71,7 +71,7 @@ class Game:
         self.combo_penalty = combo_penalty
     @property
     def dominant_suit(self):
-        return self.declarations[-1].suite if self.declarations else TrumpSuite.XJ
+        return self.declarations[-1].suit if self.declarations else TrumpSuit.XJ
 
     @property
     def game_started(self):
@@ -95,7 +95,7 @@ class Game:
         if self.stage == Stage.declare_stage: # Stage 1: drawing cards phase
             if not self.is_warmup_game:
                 for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                    if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suite == suite or self.declarations[-1].absolute_position != position):
+                    if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suit == suite or self.declarations[-1].absolute_position != position):
                         actions.append(DeclareAction(Declaration(suite, level, position)))
             actions.append(DontDeclareAction())
         elif self.hands[position].size > 25: # Stage 2: choosing the kitty
@@ -105,7 +105,7 @@ class Game:
             # Chaodi
             if self.enable_chaodi and self.declarations:
                 for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                    if self.declarations and Declaration.chaodi_level(suite, level) > Declaration.chaodi_level(self.declarations[-1].suite, self.declarations[-1].level):
+                    if self.declarations and Declaration.chaodi_level(suite, level) > Declaration.chaodi_level(self.declarations[-1].suit, self.declarations[-1].level):
                         actions.append(ChaodiAction(Declaration(suite, level, position)))
                         logging.debug(f"{position.value} can chaodi using {suite.value}")
             actions.append(DontChaodiAction())
@@ -187,14 +187,14 @@ class Game:
         
         elif isinstance(action, DeclareAction):
             assert not self.declarations or self.declarations[-1].level < action.declaration.level, "New trump suite declaration must have higher level than the existing one."
-            assert self.hands[player_position].get_count(action.declaration.suite, self.dominant_rank) >= 1, "Invalid declaration"
+            assert self.hands[player_position].get_count(action.declaration.suit, self.dominant_rank) >= 1, "Invalid declaration"
             
             if self.dealer_position is None or self.is_initial_game:
                 self.dealer_position = player_position # Round 1, player becomes dealer (抢庄)
                 self.kitty_owner = player_position
             self.declarations.append(action.declaration)
             self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
-            logging.info(f"Player {player_position} declared {action.declaration.suite} x {1 + int(action.declaration.level >= 1)}")
+            logging.info(f"Player {player_position} declared {action.declaration.suit} x {1 + int(action.declaration.level >= 1)}")
             
             if sum([h.size for h in self.hands.values()]) < 100:
                 # If 100 cards are not yet distributed, draw next card
@@ -247,7 +247,7 @@ class Game:
                 return player_position, 0 # Current player needs to first finish placing kitty
             
             if not self.enable_chaodi:
-                self.stage = Stage.play_stage
+                self.stage = Stage.main_stage
                 return self.dealer_position, reward
             else:
                 self.stage = Stage.chaodi_stage
@@ -263,7 +263,7 @@ class Game:
                 self.round_history.append((player_position, []))
             
             if not self.enable_chaodi or not self.declarations:
-                self.stage = Stage.play_stage
+                self.stage = Stage.main_stage
                 return self.dealer_position, 0
             else:
                 self.stage = Stage.chaodi_stage
@@ -276,7 +276,7 @@ class Game:
             # Note: chaodi is only an option if no one declares.
             if self.current_chaodi_turn.next_position == self.initial_chaodi_position: # We went around the table and no one chaodied.
                 self.current_chaodi_turn = None
-                self.stage = Stage.play_stage
+                self.stage = Stage.main_stage
                 return self.dealer_position, 0
             else:
                 self.current_chaodi_turn = self.current_chaodi_turn.next_position
@@ -288,7 +288,7 @@ class Game:
             self.kitty.remove_cardset(self.kitty)
             self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
             self.kitty_owner = player_position
-            logging.info(f"Player {player_position} chose to chaodi using {action.declaration.suite}")
+            logging.info(f"Player {player_position} chose to chaodi using {action.declaration.suit}")
             self.stage = Stage.kitty_stage
             self.chaodi_times[['N', 'W', 'S', 'E'].index(player_position)] += 1
             if action.declaration.level == 3:
