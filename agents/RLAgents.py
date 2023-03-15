@@ -39,7 +39,6 @@ class DeepAgent(SJAgent):
         raise NotImplementedError
     
     def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
-        logging.debug(f"({self.name}) Learning from {len(samples)} samples")
         splits = int(len(samples) / self.batch_size)
         for subsamples in np.array_split(samples, max(1, splits), axis=0):
             *args, rewards = self.prepare_batch_inputs(subsamples)
