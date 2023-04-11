@@ -8,21 +8,21 @@
 #SBATCH -n 1 # number of tasks (i.e. processes)
 #SBATCH --cpus-per-task=4 # number of cores per task
 #SBATCH --gres=gpu:1
-#SBATCH --mem=150G
+#SBATCH --mem=135G
 ##SBATCH --nodelist=steropes # if you need specific nodes
 #SBATCH --exclude=blaze,freddie,steropes,como # nodes not yet on SLURM-only
-#SBATCH -t 5-00:00 # time requested (D-HH:MM)
+#SBATCH -t 15-00:00 # time requested (D-HH:MM)
 # slurm will cd to this directory before running the script
 # you can also just run sbatch submit.sh from the directory
 # you want to be in
-#SBATCH -D /home/eecs/jiarui.shan/shengji-combos
+##SBATCH -D /home/eecs/jiarui.shan/shengji+
 # use these two lines to control the output file. Default is
 # slurm-<jobid>.out. By default stdout and stderr go to the same
 # place, but if you use both commands below they'll be split up
 # filename patterns here: https://slurm.schedmd.com/sbatch.html
 # %N is the hostname (if used, will create output(s) per node)
 # %j is jobid
-#SBATCH -o exps/d95_ablation1_finetune2/%N.%j.out # STDOUT
+#SBATCH -o exps/static_encoding_penalty_0.15/%N.%j.out # STDOUT
 ##SBATCH -e slurm.%N.%j.err # STDERR
 # if you want to get emails as your jobs run/fail
 #SBATCH --mail-type=ALL # Mail events (NONE, BEGIN, END, FAIL, ALL)
@@ -51,7 +51,7 @@ export PYTHONUNBUFFERED=1
 python3 -c "import torch; print('There are', torch.cuda.device_count(), 'GPU(s)')"
 echo visible devices = $CUDA_VISIBLE_DEVICES
 
-python TrainLoop.py --model-folder exps/d95_ablation1_finetune2 --discount 0.95 --epsilon 0.02 --games 500 --eval-size 300 --dynamic-kitty --oracle-duration 50000 --max-games 700000 --enable-combos
+python TrainLoop.py --model-folder exps/static_encoding_penalty_0.15 --agent-type dmc --discount 0.95 --epsilon 0.015 --games 2000 --eval-size 300 --max-games 700000 --enable-combos --combo-penalty 0.15 --static-encoding
 
 # print completion time
 date

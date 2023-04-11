@@ -12,6 +12,9 @@ from networks.Models import *
 
 class RandomActorModule(StageModule):
     def act(self, obs: Observation, epsilon=None, training=True):
+        if obs.stage != Stage.main_stage:
+            return random.choice(obs.actions)
+        
         non_combo: List[Action] = []
         combo: List[Action] = []
         others: List[Action] = []
@@ -23,15 +26,15 @@ class RandomActorModule(StageModule):
                     non_combo.append(a)
             else:
                 others.append(a)
-        
+                
         if others:
-            return random.choice(others)
+            return random.choice(others), None, None
         elif not non_combo:
-            return random.choice(combo)
+            return random.choice(combo), None, None
         elif not combo:
-            return random.choice(non_combo)
+            return random.choice(non_combo), None, None
         else:
-            return random.choice(combo) if random.random() > 0.9 else random.choice(non_combo)
+            return (random.choice(combo) if random.random() > 0.9 else random.choice(non_combo)), None, None
 
 class RandomAgent(SJAgent):
     def __init__(self, name: str) -> None:

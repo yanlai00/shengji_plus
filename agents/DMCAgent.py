@@ -18,7 +18,7 @@ from networks.Models import *
 
 # A generic class that describes a stage module for the DMC agent.
 class DMCModule(StageModule):
-    def __init__(self, batch_size: int, tau=0.1) -> None:
+    def __init__(self, batch_size: int, tau=0.1, dynamic_encoding=True) -> None:
         self.batch_size = batch_size # preferred batch size
         self.tau = tau # soft weight update parameter
         self._model: nn.Module = None # don't set directly
@@ -26,6 +26,7 @@ class DMCModule(StageModule):
         self.loss_fn = nn.MSELoss()
         self.train_loss_history: List[float] = []
         self.optimizer: torch.optim.Optimizer = None
+        self.dynamic_encoding = dynamic_encoding
     
     # Use this function to load a pretrained model
     def load_model(self, model: nn.Module):
@@ -43,7 +44,7 @@ class DMCModule(StageModule):
     # Training function
     def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]]):
         splits = int(len(samples) / self.batch_size)
-        for subsamples in np.array_split(samples, max(1, splits), axis=0):
+        for subsamples in np.array_split(np.array(samples, dtype=object), max(1, splits), axis=0):
             *args, rewards = self.prepare_batch_inputs(subsamples)
             pred = self._model(*args)
             loss = self.loss_fn(pred, rewards)
@@ -89,7 +90,7 @@ class DeclareModule(DMCModule):
         for i, (obs, ac, rw) in enumerate(samples):
             assert isinstance(ac, DeclareAction) or isinstance(ac, DontDeclareAction), "DeclareAgent can only handle declare actions"
             state_tensor = torch.cat([
-                obs.dynamic_hand_tensor, # (108,)
+                obs.dynamic_hand_tensor if self.dynamic_encoding else obs.hand.tensor, # (108,)
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)
@@ -109,7 +110,7 @@ class KittyModule(DMCModule):
         for i, (obs, ac, rw) in enumerate(samples):
             assert isinstance(ac, PlaceKittyAction), "KittyAgent can only handle place kitty actions"
             state_tensor = torch.cat([
-                obs.dynamic_hand_tensor, # (108,)
+                obs.dynamic_hand_tensor if self.dynamic_encoding else obs.hand.tensor, # (108,)
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)
@@ -117,7 +118,10 @@ class KittyModule(DMCModule):
                 # TODO: add kitty to state
             ])
             state_batch[i] = state_tensor
-            action_batch[i] = ac.get_dynamic_tensor(obs.dominant_suit, obs.dominant_rank)
+            if self.dynamic_encoding:
+                action_batch[i] = ac.get_dynamic_tensor(obs.dominant_suit, obs.dominant_rank)
+            else:
+                action_batch[i] = ac.tensor
             gt_rewards[i] = rw
         device = next(self._model.parameters()).device
         return state_batch.to(device), action_batch.to(device), gt_rewards.to(device)
@@ -130,7 +134,7 @@ class ChaodiModule(DMCModule):
         for i, (obs, ac, rw) in enumerate(samples):
             assert isinstance(ac, ChaodiAction) or isinstance(ac, DontChaodiAction), "ChaodiAgent can only handle chaodi decisions"
             state_tensor = torch.cat([
-                obs.dynamic_hand_tensor, # (108,)
+                obs.dynamic_hand_tensor if self.dynamic_encoding else obs.hand.tensor, # (108,)
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)
@@ -143,8 +147,8 @@ class ChaodiModule(DMCModule):
 
 
 class MainModule(DMCModule):
-    def __init__(self, batch_size: int, use_oracle: bool, tau=0.1) -> None:
-        super().__init__(batch_size, tau)
+    def __init__(self, batch_size: int, use_oracle: bool, tau=0.1, dynamic_encoding=True) -> None:
+        super().__init__(batch_size, tau, dynamic_encoding=dynamic_encoding)
 
         self.use_oracle = use_oracle
 
@@ -157,18 +161,18 @@ class MainModule(DMCModule):
         gt_rewards = torch.zeros((len(samples), 1))
         for i, (obs, ac, rw, *_) in enumerate(samples):
             assert isinstance(ac, LeadAction) or isinstance(ac, AppendLeadAction) or isinstance(ac, EndLeadAction) or isinstance(ac, FollowAction)
-            historical_moves, current_moves = obs.historical_moves_dynamic_tensor # obs.historical_moves_tensor
+            historical_moves, current_moves = obs.historical_moves_dynamic_tensor if self.dynamic_encoding else obs.historical_moves_tensor
             cardset = ac.cardset
             state_tensor = torch.cat([
-                obs.dynamic_hand_tensor, # (108,),
+                obs.dynamic_hand_tensor if self.dynamic_encoding else obs.hand.tensor, # (108,),
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)
                 obs.chaodi_times_tensor, # (4,)
                 obs.points_tensor, # (80,)
-                obs.unplayed_cards_dynamic_tensor, # (108,)
+                obs.unplayed_cards_dynamic_tensor if self.dynamic_encoding else obs.unplayed_cards_tensor, # (108,)
                 current_moves, # (328,)
-                obs.kitty_dynamic_tensor, # obs.kitty_tensor, # (108,)
+                obs.kitty_dynamic_tensor if self.dynamic_encoding else obs.kitty_tensor, # (108,)
                 # obs.current_dominating_player_index, # (3,)
                 obs.dominates_all_tensor(cardset), # (1,)
             ])
@@ -178,33 +182,46 @@ class MainModule(DMCModule):
             elif self.use_oracle:
                 state_tensor = torch.cat([torch.zeros(108 * 3), state_tensor])
 
-            x_batch[i] = torch.cat([state_tensor, ac.dynamic_tensor(obs.dominant_suit, obs.dominant_rank)])
+            if self.dynamic_encoding:
+                x_batch[i] = torch.cat([state_tensor, ac.dynamic_tensor(obs.dominant_suit, obs.dominant_rank)])
+            else:
+                x_batch[i] = torch.cat([state_tensor, ac.tensor])
             history_batch[i] = historical_moves
             gt_rewards[i] = rw
         device = next(self._model.parameters()).device
         return x_batch.to(device), history_batch.to(device), gt_rewards.to(device)
 
+    def act(self, obs: Observation, epsilon=None, training=True):
+        def reward(a: Action) -> torch.Tensor:
+            x_batch, history_batch, *_ = self.prepare_batch_inputs([(obs, a, 0)])
+            return self._eval_model(x_batch, history_batch).cpu().item()
+        rewards = list(map(reward, obs.actions))
+        action_distribution = np.exp(rewards) / np.sum(np.exp(rewards))
+        entropy = -np.mean(action_distribution * np.log2(action_distribution))
+        optimal_index = np.argmax(rewards)
+        if epsilon and random.random() < epsilon:
+            # If in verbose mode, log actions and their probabilities in test time
+            if not training and logging.getLogger().level == logging.DEBUG:
+                logging.debug("Probability of actions:")
+                sorted_actions = sorted(zip(obs.actions, rewards), key=lambda x: x[1], reverse=True)
+                for i, (action, rw) in enumerate(sorted_actions):
+                    logging.debug(f"{i:2}. {action} (reward={round(rw, 4)})")
+                return sorted_actions[0], action_distribution[optimal_index], entropy
+            else:
+                return obs.actions[optimal_index], action_distribution[optimal_index], entropy
+        else:
+            return obs.actions[optimal_index], action_distribution[optimal_index], entropy
+
 
 class DMCAgent(SJAgent):
-    def __init__(self, name: str, use_oracle: bool) -> None:
+    def __init__(self, name: str, use_oracle: bool, dynamic_encoding=True) -> None:
         super().__init__(name)
 
-        self.declare_module: DeclareModule = DeclareModule(batch_size=64)
-        self.kitty_module: KittyModule = KittyModule(batch_size=32)
-        self.chaodi_module: ChaodiModule = ChaodiModule(batch_size=32)
-        self.main_module: MainModule = MainModule(batch_size=64, use_oracle=use_oracle)
-    
-    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]], stage: Stage):
-        if stage == Stage.declare_stage:
-            self.declare_module.learn_from_samples(samples)
-        elif stage == Stage.kitty_stage:
-            self.kitty_module.learn_from_samples(samples)
-        elif stage == Stage.chaodi_stage:
-            self.chaodi_module.learn_from_samples(samples)
-        elif stage == Stage.main_stage:
-            self.main_module.learn_from_samples(samples)
-        else:
-            raise NotImplementedError()
+        self.declare_module: DeclareModule = DeclareModule(batch_size=64, dynamic_encoding=dynamic_encoding)
+        self.kitty_module: KittyModule = KittyModule(batch_size=32, dynamic_encoding=dynamic_encoding)
+        self.chaodi_module: ChaodiModule = ChaodiModule(batch_size=32, dynamic_encoding=dynamic_encoding)
+        self.main_module: MainModule = MainModule(batch_size=64, use_oracle=use_oracle, dynamic_encoding=dynamic_encoding)
+        self.dynamic_encoding = dynamic_encoding
     
     def optimizer_states(self):
         return {
@@ -254,12 +271,10 @@ class DMCAgent(SJAgent):
             with open(f'{self.name}/stats.pkl', mode='rb') as f:
                 stats = pickle.load(f)
                 iterations = stats[-1]['iterations']
-                print(f"Using checkpoint at iteration {iterations}")
             # If resuming from checkpoint, subtract iterations from oracle duration
             oracle_duration = max(0, state['oracle_duration'] - iterations)
             print(f"Resuming with remaining oracle duration {oracle_duration}")
         except Exception as e:
-            print(e)
             loaded_models = False
         main_model: nn.Module = train_models.MainModel(use_oracle=self.main_module.use_oracle).cuda()
         if os.path.exists(f'{self.name}/main.pt'):

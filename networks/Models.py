@@ -210,13 +210,12 @@ class ValueModel(nn.Module):
 
         self.lstm = nn.LSTM(436, 256, batch_first=True)
         self.fc1 = nn.Linear(1088 - 3 * 108 + 256, 768)
-        self.fc2 = nn.Linear(768, 512)
+        self.fc2 = nn.Sequential(
+            nn.Linear(768, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512)
+        )
         self.fc3 = nn.Linear(512, 1)
-
-        nn.init.xavier_uniform_(self.fc1.weight)
-        nn.init.xavier_uniform_(self.fc2.weight)
-        nn.init.xavier_uniform_(self.fc3.weight)
-        # self.fc4 = nn.Linear(256, 1)
     
     def forward(self, x: torch.Tensor, history: torch.Tensor):
         if history.shape[1] > 0:
@@ -229,6 +228,4 @@ class ValueModel(nn.Module):
         x = self.fc2(x)
         x = torch.relu(x)
         x = self.fc3(x)
-        # x = torch.relu(x)
-        # x = self.fc4(x)
         return x

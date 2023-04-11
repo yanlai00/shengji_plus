@@ -87,7 +87,7 @@ class Observation:
     @property
     def kitty_tensor(self):
         "If the player buried the kitty, return information about the kitty. Otherwise, return an empty matrix. Shape: (108,)"
-        return self.kitty if self.kitty is not None else torch.zeros(108)
+        return self.kitty.tensor if self.kitty is not None else torch.zeros(108)
     
     @property
     def kitty_dynamic_tensor(self):
@@ -164,7 +164,7 @@ class Observation:
             current_player_index = position_order.index(pos)
             history_tensor[i, current_player_index] = 1
             for cardset in round:
-                history_tensor[i, 4 + 108 * current_player_index : 4 + 108 * (current_player_index + 1)] = cardset.get_dynamic_tensor(self.dominant_suit, self.dominant_rank)
+                history_tensor[i, 4 + 108 * current_player_index : 4 + 108 * (current_player_index + 1)] = cardset.tensor
                 current_player_index = (current_player_index + 1) % 4
         
         padded_history = torch.vstack([

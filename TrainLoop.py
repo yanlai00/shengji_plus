@@ -97,12 +97,12 @@ def evaluator(idx: int, player1: SJAgent, player2: SJAgent, enable_chaodi: bool,
         #     f.write('')
         iterations += 1
         
-        if iterations > eval_size:
-            exit(0)
+        # if iterations > eval_size:
+        #     exit(0)
     
 
 
-def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, chaodi=True, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, oracle_duration=0, max_games=500000, combo_penalty=0.1):
+def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, chaodi=True, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, oracle_duration=0, max_games=500000, combo_penalty=0.1, dynamic_encoding=True):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -119,18 +119,16 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
     stats = []
 
     if agent_type == 'dmc':
-        agent = DMCAgent(model_folder, use_oracle=oracle_duration_input > 0)
-        loaded_from_disk, iterations = agent.load_models_from_disk(train_models)
-    elif agent_type == 'dqn':
-        agent = DQNAgent(model_folder)
-        raise NotImplementedError()
-        # value_model = train_models.ValueModel().to(device)
-        # if os.path.exists(f'{model_folder}/value.pt'):
-        #     value_model.load_state_dict(torch.load(f'{model_folder}/value.pt', map_location=device))
-        #     print("Using loaded value model")
-        # value_model.share_memory()
-        # print("Using Q learning main agent")
-        # main_agent = QLearningMainAgent('main', main_model, value_model, discount=discount, tau=tau)
+        agent = DMCAgent(model_folder, use_oracle=oracle_duration_input > 0, dynamic_encoding=dynamic_encoding)
+        print(f"Using DMC model {'with' if dynamic_encoding else 'without'} dynamic encoding")
+    elif agent_type == 'dqn' or agent_type == 'sac':
+        agent = DQNAgent(model_folder, discount=discount, sac=agent_type == 'sac')
+        print("Using DQN model" + (" with sac" if agent_type == 'sac' else ""))
+    loaded_from_disk, iterations = agent.load_models_from_disk(train_models)
+    if loaded_from_disk:
+        print(f"Using checkpoint at iteration {iterations}")
+        with open(model_folder + '/stats.pkl', 'rb') as f:
+            stats = pickle.load(f)
 
     eval_agent: SJAgent
 
@@ -144,38 +142,16 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
             eval_models = importlib.import_module(f'{compare}.Models'.replace('/', '.'))
         except:
             eval_models = importlib.import_module("networks.Models")
-        
-        # Load nn modules
-        eval_main_model = eval_models.MainModel(use_oracle=eval_state['oracle_duration'] > 0).to(device)
-        eval_main_model.load_state_dict(torch.load(f'{compare}/main.pt', map_location=device), strict=False)
-        print(f"Using main model in {compare} for comparison")
 
-        eval_kitty_model = eval_models.KittyModel().to(device)
-        eval_kitty_model.load_state_dict(torch.load(f'{compare}/kitty.pt', map_location=device), strict=False)
-        print(f"Using kitty model in {compare} for comparison")
-
-        eval_declare_model = eval_models.DeclarationModel().to(device)
-        eval_declare_model.load_state_dict(torch.load(f'{compare}/declare.pt', map_location=device), strict=False)
-        print(f"Using declare model in {compare} for comparison")
-
-        eval_chaodi_model = eval_models.ChaodiModel().to(device)
-        eval_chaodi_model.load_state_dict(torch.load(f'{compare}/chaodi.pt', map_location=device), strict=False)
-        print(f"Using chaodi model in {compare} for comparison")
-
-
-        if eval_state['agent_type'] == 'dqn':
-            eval_value_model = eval_models.ValueModel().to(device)
-            eval_value_model.load_state_dict(torch.load(f'{compare}/value.pt', map_location=device))
-            print(f"Using loaded value model in {compare} for comparison")
-            eval_value_model.share_memory()
-            eval_agent = DQNAgent(compare) # More parameters may be needed
-            # TODO: load pretrained models
+        if eval_state['agent_type'] in ('dqn', 'sac'):
+            eval_agent = DQNAgent(compare, sac=eval_state['agent_type'] == 'sac')
         else:
-            eval_agent = DMCAgent(compare, use_oracle=eval_state['oracle_duration'] > 0)
-            eval_agent.declare_module.load_model(eval_declare_model)
-            eval_agent.kitty_module.load_model(eval_kitty_model)
-            eval_agent.chaodi_module.load_model(eval_chaodi_model)
-            eval_agent.main_module.load_model(eval_main_model)
+            eval_agent = DMCAgent(compare, use_oracle=eval_state['oracle_duration'] > 0, dynamic_encoding=eval_state['dynamic_encoding'])
+        
+        loaded_eval_model, eval_iterations = eval_agent.load_models_from_disk(eval_models)
+        if loaded_eval_model:
+            print(f"Using evaluation checkpoint at iteration {eval_iterations}")
+        
     else:
         if eval_agent_type == 'random':
             eval_agent = RandomAgent('random')
@@ -220,7 +196,6 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
         if not eval_only:
             print(f"Training iterations {iterations}-{iterations + games}...")
             for _ in tqdm.tqdm(range(0, games, 10)):
-                # print('wait', global_main_queue.qsize(), global_declare_queue.qsize(), global_kitty_queue.qsize(), global_chaodi_queue.qsize())
                 declare_batch = global_declare_queue.get()
                 kitty_batch = global_kitty_queue.get()
                 main_batch = global_main_queue.get()
@@ -231,12 +206,12 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
                 agent.learn_from_samples(main_batch, Stage.main_stage)
             agent.save_models_to_disk()
             print('main loss:', np.mean(agent.main_module.train_loss_history), 'declare loss:', np.mean(agent.declare_module.train_loss_history), 'kitty loss:', np.mean(agent.kitty_module.train_loss_history), 'chaodi loss:', np.mean(agent.chaodi_module.train_loss_history))
-            agent.clear_loss_histories()
-
             if isinstance(agent, DQNAgent):
-                print("value loss:", np.mean(agent.value_loss_history))
-                agent.value_loss_history.clear()
-            
+                print("value loss:", np.mean(agent.main_module.value_loss_history))
+                if agent.sac:
+                    print("Current alpha:", agent.main_module.log_alpha.exp().cpu().item())
+            agent.clear_loss_histories()
+        
         if single_process:
             eval_sim = Simulation(
                 player1=agent,
@@ -298,6 +273,7 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
                     'iterations': iterations,
                     **agent.optimizer_states(),
                     'oracle_duration': oracle_duration_input,
+                    'dynamic_encoding': dynamic_encoding
                 }, f)
         else:
             break
@@ -307,7 +283,7 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Train loop')
-    parser.add_argument('--agent-type', type=str, default='dmc', choices=['dmc', 'dqn'])
+    parser.add_argument('--agent-type', type=str, default='dmc', choices=['dmc', 'dqn', 'sac'])
     parser.add_argument('--games', type=int, default=500)
     parser.add_argument('--eval-only', action='store_true')
     parser.add_argument('--eval-size', type=int, default=300)
@@ -329,5 +305,6 @@ if __name__ == '__main__':
     parser.add_argument('--oracle-duration', type=int, default=0)
     parser.add_argument('--max-games', type=int, default=500000)
     parser.add_argument('--combo-penalty', type=float, default=0.1)
+    parser.add_argument('--static-encoding', action='store_true')
     args = parser.parse_args()
-    train(args.agent_type, args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, not args.disable_chaodi, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.oracle_duration, args.max_games, args.combo_penalty)
+    train(args.agent_type, args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, not args.disable_chaodi, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.oracle_duration, args.max_games, args.combo_penalty, not args.static_encoding)

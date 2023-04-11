@@ -76,6 +76,13 @@ class Simulation:
         }
         self.chaodi_history: List[Tuple[Observation, Action, float, Observation]] = []
 
+        self.action_entropy_per_player = {
+            AbsolutePosition.NORTH: [],
+            AbsolutePosition.SOUTH: [],
+            AbsolutePosition.WEST: [],
+            AbsolutePosition.EAST: []
+        }
+
         self.cumulative_rewards = not isinstance(player1, DQNAgent) # Whether to compute cumulative rewards at the end
 
         self.inference_times = []
@@ -97,7 +104,7 @@ class Simulation:
                 elif self.game_engine.stage == Stage.chaodi_stage:
                     action = self.player2.act(observation, training=False)
                 else:
-                    action = self.player2.act(observation, training=False)
+                    action, _, _ = self.player2.act(observation, training=False)
             else:
                 # In training mode, player1 plays all 4 positions
                 if self.game_engine.stage == Stage.declare_stage:
@@ -109,7 +116,7 @@ class Simulation:
                 else:
                     if self.eval_mode:
                         start = datetime.now().timestamp()
-                    action = self.player1.act(observation, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
+                    action, max_prob, entropy = self.player1.act(observation, epsilon=not self.eval_mode and self.epsilon, training=not self.eval_mode)
                     if self.eval_mode:
                         self.inference_times.append(datetime.now().timestamp() - start)
             
@@ -130,6 +137,7 @@ class Simulation:
                     # Don't store intermediate append actions
                     if isinstance(action, EndLeadAction) or isinstance(action, FollowAction):
                         self._main_history_per_player[last_player].append((observation, action, reward))
+                        self.action_entropy_per_player[last_player].append((max_prob, entropy))
             
             # Helper function that determines if a player is on the defender side or the opponent side
             def is_defender(player: AbsolutePosition):
@@ -232,7 +240,11 @@ class Simulation:
                         next_ob = None
                         if not self.cumulative_rewards:
                             next_ob = self._main_history_per_player[position][i + 1][0] if i+1 < len(self._main_history_per_player[position]) else None
-                        self._main_history_per_player[position][i] = (ob, ac, rw, next_ob)
+                        self._main_history_per_player[position][i] = (ob, ac, rw, (
+                            next_ob,
+                            self.action_entropy_per_player[position][i][0], # max_prob of current action distribution
+                            self.action_entropy_per_player[position][i+1][1] if i+1 < len(self._main_history_per_player[position]) else None # entropy of next action distribution
+                        ))
                         
                         self.main_history.append(self._main_history_per_player[position][i])
                     self._main_history_per_player[position] = []

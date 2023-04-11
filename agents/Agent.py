@@ -50,7 +50,16 @@ class SJAgent:
             raise NotImplementedError()
     
     def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]], stage: Stage):
-        raise NotImplementedError()
+        if stage == Stage.declare_stage:
+            self.declare_module.learn_from_samples(samples)
+        elif stage == Stage.kitty_stage:
+            self.kitty_module.learn_from_samples(samples)
+        elif stage == Stage.chaodi_stage:
+            self.chaodi_module.learn_from_samples(samples)
+        elif stage == Stage.main_stage:
+            self.main_module.learn_from_samples(samples)
+        else:
+            raise NotImplementedError()
 
     def optimizer_states(self):
         return {}
