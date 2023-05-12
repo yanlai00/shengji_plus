@@ -16,6 +16,9 @@ class InteractiveAgent(SJAgent):
         while True:
             idx = input("Enter action index: ")
             try:
-                return obs.actions[int(idx)]
+                if obs.stage == Stage.main_stage:
+                    return obs.actions[int(idx)], None, None
+                else:
+                    return obs.actions[int(idx)]
             except:
                 continue

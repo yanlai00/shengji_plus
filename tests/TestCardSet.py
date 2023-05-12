@@ -106,10 +106,10 @@ class TestCardSet(unittest.TestCase):
     
     def test_count_suite(self):
         # for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE, CardSuite.TRUMP]:
-        self.assertEqual(self.cardset_simple.count_suite(CardSuit.TRUMP, TrumpSuit.HEART, 3), 10)
-        self.assertEqual(self.cardset_simple.count_suite(CardSuit.HEART, TrumpSuit.HEART, 3), 0) # Since HEART is trump, there is no card in the HEART category, since they would all be trump cards
-        self.assertEqual(self.cardset_simple.count_suite(CardSuit.DIAMOND, TrumpSuit.HEART, 3), 4) # 3s are trump cards, not diamond cards
-        self.assertEqual(self.cardset_simple.count_suite(CardSuit.HEART, TrumpSuit.DJ, 3), 4)
+        self.assertEqual(self.cardset_simple.count_suit(CardSuit.TRUMP, TrumpSuit.HEART, 3), 10)
+        self.assertEqual(self.cardset_simple.count_suit(CardSuit.HEART, TrumpSuit.HEART, 3), 0) # Since HEART is trump, there is no card in the HEART category, since they would all be trump cards
+        self.assertEqual(self.cardset_simple.count_suit(CardSuit.DIAMOND, TrumpSuit.HEART, 3), 4) # 3s are trump cards, not diamond cards
+        self.assertEqual(self.cardset_simple.count_suit(CardSuit.HEART, TrumpSuit.DJ, 3), 4)
 
     def test_matching_moves_single(self):
         # Analysis: 5♥ is a trump card in this situation, so the player's action set contains all single trump cards.

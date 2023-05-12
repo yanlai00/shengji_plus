@@ -18,7 +18,7 @@ class DeclarationModule(StageModule):
         best_relative_count = 0
         for declare_action in obs.actions:
             if isinstance(declare_action, DeclareAction) and declare_action.declaration.suit not in ['XJ', 'DJ']:
-                trump_count = obs.hand.count_suite(CardSuit.TRUMP, declare_action.declaration.suit, obs.dominant_rank)
+                trump_count = obs.hand.count_suit(CardSuit.TRUMP, declare_action.declaration.suit, obs.dominant_rank)
                 if trump_count > best_relative_count:
                     best_relative_count = trump_count
                     best_declare_option = declare_action
@@ -34,22 +34,22 @@ class KittyModule(StageModule):
         best_actions: List[Tuple[int, Action]] = []
         second_best_actions: List[Tuple[int, Action]] = []
         worse_actions: List[Tuple[int, Action]] = []
-        current_suite = obs.declaration.suit if obs.declaration else TrumpSuit.XJ
+        current_suit = obs.declaration.suit if obs.declaration else TrumpSuit.XJ
         for action in obs.actions:
             assert isinstance(action, PlaceKittyAction)
             action: PlaceKittyAction
             
-            rank = get_rank(action.card, current_suite, obs.dominant_rank)
-            suite = get_suit(action.card, current_suite, obs.dominant_rank)
+            rank = get_rank(action.card, current_suit, obs.dominant_rank)
+            suit = get_suit(action.card, current_suit, obs.dominant_rank)
             
             # Best actions
-            if suite != CardSuit.TRUMP and rank <= 11 and action.count == 1:
+            if suit != CardSuit.TRUMP and rank <= 11 and action.count == 1:
                 best_actions.append((rank, action))
             
             # Second best actions
-            elif suite != CardSuit.TRUMP and (rank <= 8 and action.count == 2) or (rank <= 13 and action.count == 1):
+            elif suit != CardSuit.TRUMP and (rank <= 8 and action.count == 2) or (rank <= 13 and action.count == 1):
                 second_best_actions.append((rank * 2, action))
-            elif suite == CardSuit.TRUMP and rank <= 7:
+            elif suit == CardSuit.TRUMP and rank <= 7:
                 worse_actions.append((rank, action))
         
         if best_actions:
@@ -63,20 +63,20 @@ class ChaodiModule(StageModule):
     def act(self, obs: Observation, epsilon=None, training=True):
         assert obs.stage == Stage.chaodi_stage
         dominant_suit = obs.declaration.suit if obs.declaration else TrumpSuit.XJ
-        best_suite_action: Action = None
+        best_suit_action: Action = None
         nt_action: Action = None
-        current_trump_count = obs.hand.count_suite(CardSuit.TRUMP, dominant_suit, obs.dominant_rank)
+        current_trump_count = obs.hand.count_suit(CardSuit.TRUMP, dominant_suit, obs.dominant_rank)
         best_chaodi_trump_count = 0
         for option in obs.actions:
             if isinstance(option, ChaodiAction):
                 if option.declaration.suit in ('XJ', 'DJ'):
                     nt_action = option
                 else:
-                    new_trump_count = obs.hand.count_suite(CardSuit.TRUMP, option.declaration.suit, obs.dominant_rank)
+                    new_trump_count = obs.hand.count_suit(CardSuit.TRUMP, option.declaration.suit, obs.dominant_rank)
                     best_chaodi_trump_count = max(best_chaodi_trump_count, new_trump_count)
         
-        if best_suite_action and best_chaodi_trump_count >= 10 and best_chaodi_trump_count + 2 >= current_trump_count:
-            return best_suite_action
+        if best_suit_action and best_chaodi_trump_count >= 10 and best_chaodi_trump_count + 2 >= current_trump_count:
+            return best_suit_action
         elif nt_action and current_trump_count < 12:
             return nt_action
         else:
@@ -90,7 +90,7 @@ class MainModule(StageModule):
             other_actions = []
             for action in obs.actions:
                 action: LeadAction
-                d = action.move.cardset.decompose(dominant_suite, obs.dominant_rank)
+                d = action.move.cardset.decompose(obs.dominant_suit, obs.dominant_rank)
                 
                 # For simplicity, this agent doesn't play combos
                 if len(d) > 1:
@@ -102,11 +102,11 @@ class MainModule(StageModule):
                         else:
                             second_best_actions.append(action)
                     print(action.move)
-                elif action.move.cardset.count_suite(CardSuit.TRUMP, dominant_suite, obs.dominant_rank) == 0:
-                    min_rank = d[0].cardset.min_rank(dominant_suite, obs.dominant_rank)
+                elif action.move.cardset.count_suit(CardSuit.TRUMP, obs.dominant_suit, obs.dominant_rank) == 0:
+                    min_rank = d[0].cardset.min_rank(obs.dominant_suit, obs.dominant_rank)
                     if isinstance(d[0], MoveType.Tractor) or isinstance(d[0], MoveType.Pair) and min_rank >= 8 and isinstance(d[0], MoveType.Single) and (min_rank == 14 or obs.dominant_rank == 14 and min_rank == 13):
                         optimal_actions.append(action)
-                    elif isinstance(d[0], MoveType.Pair) or d[0].cardset.min_rank(dominant_suite, obs.dominant_rank) > 10:
+                    elif isinstance(d[0], MoveType.Pair) or d[0].cardset.min_rank(obs.dominant_suit, obs.dominant_rank) > 10:
                         second_best_actions.append(action)
                     else:
                         other_actions.append(action)
@@ -117,27 +117,27 @@ class MainModule(StageModule):
                         other_actions.append(action)
                 
                 if optimal_actions:
-                    return random.choice(optimal_actions)
+                    return random.choice(optimal_actions), None, None
                 elif second_best_actions:
-                    return random.choice(second_best_actions)
+                    return random.choice(second_best_actions), None, None
                 else:
-                    return other_actions[0]
+                    return other_actions[0], None, None
                         
         else:
             current_round_points = 0
-            dominant_suite = obs.declaration.suit if obs.declaration else TrumpSuit.XJ
+            dominant_suit = obs.declaration.suit if obs.declaration else TrumpSuit.XJ
             for h in obs.round_history[-1][1]:
                 current_round_points += h.total_points()
             
             good_action_choices = []
             other_action_choices = []
-            lead_index = CardSet.round_winner(obs.round_history[-1][1], dominant_suite, obs.dominant_rank)
+            lead_index = CardSet.round_winner(obs.round_history[-1][1], dominant_suit, obs.dominant_rank)
             teammate_is_biggest = len(obs.round_history[-1][1]) - lead_index == 2
             
             for action in obs.actions:
                 if not isinstance(action, FollowAction): continue
 
-                is_dominating = CardSet.round_winner(obs.round_history[-1][1] + [action.cardset], dominant_suite, obs.dominant_rank) == len(obs.round_history[-1][1])
+                is_dominating = CardSet.round_winner(obs.round_history[-1][1] + [action.cardset], dominant_suit, obs.dominant_rank) == len(obs.round_history[-1][1])
                 if (current_round_points > 0 or len(obs.round_history[-1][1]) == 2) and not teammate_is_biggest:
                     if is_dominating:
                         good_action_choices.append(action)
@@ -147,15 +147,15 @@ class MainModule(StageModule):
                     good_action_choices.append(action)
             
             if good_action_choices:
-                return random.choice(good_action_choices)
+                return random.choice(good_action_choices), None, None
             else:
-                return random.choice(other_action_choices)
+                return random.choice(other_action_choices), None, None
 
 class StrategicAgent(SJAgent):
     def __init__(self, name: str) -> None:
         super().__init__(name)
 
-        self.declare_module = DeclarationModel()
+        self.declare_module = DeclarationModule()
         self.kitty_module = KittyModule()
         self.chaodi_module = ChaodiModule()
         self.main_module = MainModule()

@@ -214,9 +214,9 @@ class Game:
 
             suite_count_before = 0
             for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
-                if self.hands[player_position].count_suite(suite, self.dominant_suit, self.dominant_rank) > 0:
+                if self.hands[player_position].count_suit(suite, self.dominant_suit, self.dominant_rank) > 0:
                     suite_count_before += 1
-            trump_count_before = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
+            trump_count_before = self.hands[player_position].count_suit(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
 
             self.kitty.add_card(action.card)
             self.hands[player_position].remove_card(action.card)
@@ -225,9 +225,9 @@ class Game:
             suite_count_after = 0
             trump_count_after = 0
             for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
-                if self.hands[player_position].count_suite(suite, self.dominant_suit, self.dominant_rank) > 0:
+                if self.hands[player_position].count_suit(suite, self.dominant_suit, self.dominant_rank) > 0:
                     suite_count_after += 1
-            trump_count_after = self.hands[player_position].count_suite(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
+            trump_count_after = self.hands[player_position].count_suit(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
             
             reward = 0.2 * (suite_count_before - suite_count_after) # Encourage players to get rid of a suite completely
             if trump_count_after < trump_count_before:

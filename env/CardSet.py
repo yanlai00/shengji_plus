@@ -134,7 +134,7 @@ class CardSet:
     def size(self):
         return self.__len__()
     
-    def count_suite(self, suite: CardSuit, dominant_suite: TrumpSuit, dominant_rank: int):
+    def count_suit(self, suite: CardSuit, dominant_suite: TrumpSuit, dominant_rank: int):
         "Count the total number of cards the set has in the given CardSuite."
         total_count = 0
         for card, count in self._cards.items():
@@ -307,7 +307,7 @@ class CardSet:
         def matches_for_simple_move(target: Union[MoveType.Single, MoveType.Pair, MoveType.Tractor], hand: CardSet):
             matches: Set[CardSet] = set()
             same_suite_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suit(card, dominant_suite, dominant_rank) == target_suite}
-            suite_count = hand.count_suite(target_suite, dominant_suite, dominant_rank)
+            suite_count = hand.count_suit(target_suite, dominant_suite, dominant_rank)
 
             if isinstance(target, MoveType.Single):
                 if len(same_suite_cards) > 0:
