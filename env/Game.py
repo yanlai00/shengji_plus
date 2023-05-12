@@ -195,6 +195,7 @@ class Game:
             self.declarations.append(action.declaration)
             self.public_cards[player_position].add_card(*action.declaration.get_card(self.dominant_rank))
             logging.info(f"Player {player_position} declared {action.declaration.suit} x {1 + int(action.declaration.level >= 1)}")
+            logging.info(f"Player {player_position} has cards: {self.hands[player_position]}")
             
             if sum([h.size for h in self.hands.values()]) < 100:
                 # If 100 cards are not yet distributed, draw next card
@@ -236,6 +237,7 @@ class Game:
             if self.kitty.size == 8:
                 if not self.round_history:
                     self.round_history.append((player_position, []))
+                logging.debug(f"Current declaration sequence: {self.declarations}")
                 logging.debug(f"Hands of all players:")
                 logging.debug(f"  North: {self.hands['N']}")
                 logging.debug(f"  West: {self.hands['W']}")

@@ -67,7 +67,7 @@ class DMCModule(StageModule):
     def act(self, obs: Observation, epsilon=None, training=True):
         def reward(a: Action) -> torch.Tensor:
             *state_and_action, _ = self.prepare_batch_inputs([(obs, a, 0)])
-            return self._eval_model(*state_and_action)
+            return self._eval_model(*state_and_action).cpu().item()
         
         if epsilon and random.random() < epsilon:
             return random.choice(obs.actions)
@@ -75,11 +75,13 @@ class DMCModule(StageModule):
         else:
             # If in verbose mode, log actions and their probabilities in test time
             if not training and logging.getLogger().level == logging.DEBUG:
-                logging.debug("Probability of actions:")
-                sorted_actions = sorted(obs.actions, key=reward, reverse=True)
-                for i, action in enumerate(sorted_actions):
-                    logging.debug(f"{i:2}. {action} (reward={round(reward(action).cpu().item(), 4)})")
-                return sorted_actions[0]
+                logging.debug(f"Probability of actions ({obs.position.value}):")
+                rewards = list(map(reward, obs.actions))
+                exp_total = np.sum(np.exp(rewards))
+                sorted_actions = sorted(zip(obs.actions, rewards), key=lambda x: x[1], reverse=True)
+                for i, (action, rw) in enumerate(sorted_actions):
+                    logging.debug(f"{i:2}. {action} (reward={round(rw, 4)}, prob={np.exp(rw) / exp_total:.4f})")
+                return sorted_actions[0][0]
             else:
                 return max(obs.actions, key=reward)
 
@@ -147,22 +149,38 @@ class ChaodiModule(DMCModule):
 
 
 class MainModule(DMCModule):
-    def __init__(self, batch_size: int, use_oracle: bool, tau=0.1, dynamic_encoding=True) -> None:
+    def __init__(self, batch_size: int, use_oracle: bool, tau=0.1, dynamic_encoding=True, sac=False) -> None:
         super().__init__(batch_size, tau, dynamic_encoding=dynamic_encoding)
 
+        self.sac = sac
         self.use_oracle = use_oracle
+        self.log_alpha = torch.tensor(1.0).log().cuda()
+        self.log_alpha.requires_grad = True
+        self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=3e-4)
 
-    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Observation]], training=True):
+    def prepare_batch_inputs(self, samples: List[Tuple[Observation, Action, float, Tuple[Observation, float, float]]], training=True):
         if self.use_oracle:
             x_batch = torch.zeros((len(samples), 1089 + 108)) # additionally provide other players' hands
         else:
             x_batch = torch.zeros((len(samples), 1089 - 2 * 108))
         history_batch = torch.zeros((len(samples), 15, 436)) # Store up to last 15 rounds of history
         gt_rewards = torch.zeros((len(samples), 1))
-        for i, (obs, ac, rw, *_) in enumerate(samples):
+        next_action_entropy = torch.zeros(len(samples))
+        current_action_entropy = torch.zeros(len(samples))
+
+        for i, (obs, ac, rw, aux) in enumerate(samples):
             assert isinstance(ac, LeadAction) or isinstance(ac, AppendLeadAction) or isinstance(ac, EndLeadAction) or isinstance(ac, FollowAction)
             historical_moves, current_moves = obs.historical_moves_dynamic_tensor if self.dynamic_encoding else obs.historical_moves_tensor
             cardset = ac.cardset
+            if aux is not None:
+                (next_obs, current_entropy, next_entropy) = aux
+                if current_entropy is not None:
+                    current_action_entropy[i] = current_entropy
+                if next_entropy is not None:
+                    next_action_entropy[i] = next_entropy
+            else:
+                next_obs, current_entropy, next_entropy = None, None, None
+            
             state_tensor = torch.cat([
                 obs.dynamic_hand_tensor if self.dynamic_encoding else obs.hand.tensor, # (108,),
                 obs.dealer_position_tensor, # (4,)
@@ -189,11 +207,11 @@ class MainModule(DMCModule):
             history_batch[i] = historical_moves
             gt_rewards[i] = rw
         device = next(self._model.parameters()).device
-        return x_batch.to(device), history_batch.to(device), gt_rewards.to(device)
+        return x_batch.to(device), history_batch.to(device), current_action_entropy.to(device), next_action_entropy.to(device), gt_rewards.to(device)
 
     def act(self, obs: Observation, epsilon=None, training=True):
         def reward(a: Action) -> torch.Tensor:
-            x_batch, history_batch, *_ = self.prepare_batch_inputs([(obs, a, 0)])
+            x_batch, history_batch, *_ = self.prepare_batch_inputs([(obs, a, 0, None)])
             return self._eval_model(x_batch, history_batch).cpu().item()
         rewards = list(map(reward, obs.actions))
         action_distribution = np.exp(rewards) / np.sum(np.exp(rewards))
@@ -211,17 +229,47 @@ class MainModule(DMCModule):
                 return obs.actions[optimal_index], action_distribution[optimal_index], entropy
         else:
             return obs.actions[optimal_index], action_distribution[optimal_index], entropy
+    
+    def learn_from_samples(self, samples: List[Tuple[Observation, Action, float, Tuple[Observation, float, float]]]):
+        splits = int(len(samples) / self.batch_size)
+        for subsamples in np.array_split(np.array(samples, dtype=object), max(1, splits), axis=0):
+            *args, current_action_entropy, next_action_entropy, rewards = self.prepare_batch_inputs(subsamples)
+            pred = self._model(*args)
+            loss = self.loss_fn(pred, rewards + torch.exp(self.log_alpha) * next_action_entropy.unsqueeze(1))
+            self.optimizer.zero_grad()
+            loss.backward()
+            if torch.isnan(loss):
+                def init_weights(m):
+                    if isinstance(m, nn.Linear):
+                        nn.init.xavier_uniform_(m.weight.data)
+                self._model.apply(init_weights)
+                print(f"Model {self} encountered nan, reset weights to random.")
+            else:
+                nn.utils.clip_grad_norm_(self._model.parameters(), 80)
+                self.optimizer.step()
+                self.train_loss_history.append(loss.detach().item())
+            
+            # Update alpha
+            if self.sac:
+                alpha_loss = self.log_alpha.exp() * torch.mean(current_action_entropy) + self.log_alpha.exp() * 10
+                self.alpha_optimizer.zero_grad()
+                alpha_loss.backward()
+                self.alpha_optimizer.step()
+
+        for param, target_param in zip(self._model.parameters(), self._eval_model.parameters()):
+            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 
 class DMCAgent(SJAgent):
-    def __init__(self, name: str, use_oracle: bool, dynamic_encoding=True) -> None:
+    def __init__(self, name: str, use_oracle: bool, dynamic_encoding=True, sac=False) -> None:
         super().__init__(name)
 
         self.declare_module: DeclareModule = DeclareModule(batch_size=64, dynamic_encoding=dynamic_encoding)
         self.kitty_module: KittyModule = KittyModule(batch_size=32, dynamic_encoding=dynamic_encoding)
         self.chaodi_module: ChaodiModule = ChaodiModule(batch_size=32, dynamic_encoding=dynamic_encoding)
-        self.main_module: MainModule = MainModule(batch_size=64, use_oracle=use_oracle, dynamic_encoding=dynamic_encoding)
+        self.main_module: MainModule = MainModule(batch_size=64, use_oracle=use_oracle, dynamic_encoding=dynamic_encoding, sac=sac)
         self.dynamic_encoding = dynamic_encoding
+        self.sac = sac
     
     def optimizer_states(self):
         return {
@@ -229,6 +277,8 @@ class DMCAgent(SJAgent):
             'kitty_optim_state': self.kitty_module.optimizer.state_dict(),
             'chaodi_optim_state': self.chaodi_module.optimizer.state_dict(),
             'main_optim_state': self.main_module.optimizer.state_dict(),
+            'alpha_optim_state': self.main_module.alpha_optimizer.state_dict() if self.sac else None,
+            'alpha': self.main_module.log_alpha.exp().cpu().item()
         }
 
     def load_optimizer_states(self, state):
@@ -236,6 +286,9 @@ class DMCAgent(SJAgent):
         self.kitty_module.optimizer.load_state_dict(state['kitty_optim_state'])
         self.declare_module.optimizer.load_state_dict(state['declare_optim_state'])
         self.chaodi_module.optimizer.load_state_dict(state['chaodi_optim_state'])
+        if self.sac:
+            self.main_module.log_alpha.data = torch.tensor(state['alpha']).log()
+            self.main_module.alpha_optimizer.load_state_dict(state['alpha_optim_state'])
 
     def load_models_from_disk(self, train_models):
         # Load models for DMC

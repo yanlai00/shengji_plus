@@ -178,6 +178,8 @@ class Simulation:
                     position_list = ['N', 'S']
                 elif not self.eval_mode:
                     position_list = ['N', 'W', 'S', 'E']
+                else:
+                    return True, action # skip action collection process if in eval mode
 
                 for position in position_list:
                     # For kitty action, the reward is not discounted because each move is equally important
@@ -238,11 +240,11 @@ class Simulation:
                                 rw -= self.game_engine.points_per_round[i] / 80 # Opponents are not so sad when they lose points
                         
                         next_ob = None
-                        if not self.cumulative_rewards:
+                        if getattr(self.player1, 'sac', False):
                             next_ob = self._main_history_per_player[position][i + 1][0] if i+1 < len(self._main_history_per_player[position]) else None
                         self._main_history_per_player[position][i] = (ob, ac, rw, (
                             next_ob,
-                            self.action_entropy_per_player[position][i][0], # max_prob of current action distribution
+                            self.action_entropy_per_player[position][i][1],
                             self.action_entropy_per_player[position][i+1][1] if i+1 < len(self._main_history_per_player[position]) else None # entropy of next action distribution
                         ))
                         

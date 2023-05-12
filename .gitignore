@@ -3,3 +3,6 @@ __pycache__
 *.png
 slurm_logs
 exps
+eval
+.pdf
+.sh
