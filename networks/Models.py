@@ -5,7 +5,7 @@ import torch.nn as nn
 import sys
 
 class DeclarationModel(nn.Module):
-    "The declaration model's observation includes: player's cards, player's position relative to the dealer, current declaration (rank and suite), position of current declaration, known trump cards in each player's hands."
+    "The declaration model's observation includes: player's cards, player's position relative to the dealer, current declaration (rank and suit), position of current declaration, known trump cards in each player's hands."
     def __init__(self) -> None:
         super().__init__()
 

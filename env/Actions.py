@@ -14,7 +14,7 @@ class Action:
         raise NotImplementedError
 
 class DeclareAction(Action):
-    "Reveal one or more cards in the dominant rank (or a pair of identical jokers) to declare or override the trump suite."
+    "Reveal one or more cards in the dominant rank (or a pair of identical jokers) to declare or override the trump suit."
     def __init__(self, declaration: Declaration) -> None:
         self.declaration = declaration
     def __repr__(self) -> str:
@@ -97,7 +97,7 @@ class PlaceAllKittyAction(Action):
         return f"Discard({self.cards})"
 
 class ChaodiAction(Action):
-    "Changes trump suite and swap cards with the kitty."
+    "Changes trump suit and swap cards with the kitty."
     def __init__(self, declaration: Declaration) -> None:
         self.declaration = declaration
     def __repr__(self) -> str:

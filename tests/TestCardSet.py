@@ -21,7 +21,7 @@ class TestCardSet(unittest.TestCase):
             'XJ': 2
         })
 
-        self.cardset_all_suites = CardSet({
+        self.cardset_all_suits = CardSet({
             '8♣': 1,
             '10♠': 2,
             'J♠': 2,
@@ -33,7 +33,7 @@ class TestCardSet(unittest.TestCase):
             'DJ': 2
         })
 
-        self.cardset_big_suite = CardSet({
+        self.cardset_big_suit = CardSet({
             'A♥': 2,
             'K♥': 2,
             'Q♥': 2,
@@ -98,14 +98,14 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(len(moves2), 17) # 5 singles, 5 pairs, 4 length-2 tractors, 3 length-3 tractor
     
     def test_lead_actions_skip_dominant_rank(self):
-        moves = self.cardset_simple.get_leading_moves(dominant_suite=TrumpSuit.HEART, dominant_rank=3)
+        moves = self.cardset_simple.get_leading_moves(dominant_suit=TrumpSuit.HEART, dominant_rank=3)
         self.assertEqual(len(moves), 19) # 7 singles, 7 pairs, 4 length-2 tractors, 1 length-3 tractor
 
-        moves = self.cardset_big_suite.get_leading_moves(dominant_suite=TrumpSuit.HEART, dominant_rank=3)
+        moves = self.cardset_big_suit.get_leading_moves(dominant_suit=TrumpSuit.HEART, dominant_rank=3)
         self.assertEqual(len(moves), 32)
     
-    def test_count_suite(self):
-        # for suite in [CardSuite.CLUB, CardSuite.DIAMOND, CardSuite.HEART, CardSuite.SPADE, CardSuite.TRUMP]:
+    def test_count_suit(self):
+        # for suit in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE, CardSuit.TRUMP]:
         self.assertEqual(self.cardset_simple.count_suit(CardSuit.TRUMP, TrumpSuit.HEART, 3), 10)
         self.assertEqual(self.cardset_simple.count_suit(CardSuit.HEART, TrumpSuit.HEART, 3), 0) # Since HEART is trump, there is no card in the HEART category, since they would all be trump cards
         self.assertEqual(self.cardset_simple.count_suit(CardSuit.DIAMOND, TrumpSuit.HEART, 3), 4) # 3s are trump cards, not diamond cards
@@ -116,7 +116,7 @@ class TestCardSet(unittest.TestCase):
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Single('5♥'), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 5) # XJ, 3♦, 4♥, 3♥, 2♥ are the 5 valid moves
     
-        # Analysis: the player has no ♣ suite cards, so they can choose any of the 7 cards to play.
+        # Analysis: the player has no ♣ suit cards, so they can choose any of the 7 cards to play.
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Single('5♣'), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 7)
 
@@ -128,21 +128,21 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(len(matching_moves), 2) # 4♥ and 2♥
     
     def test_matching_moves_pair(self):
-        matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Pair('2♠'), TrumpSuit.HEART, 2)
+        matching_moves = self.cardset_all_suits.get_matching_moves(MoveType.Pair('2♠'), TrumpSuit.HEART, 2)
         self.assertEqual(len(matching_moves), 2) # The player can play a pair of 2♦ or jokers
 
-        matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Pair('3♠'), TrumpSuit.HEART, 2)
+        matching_moves = self.cardset_all_suits.get_matching_moves(MoveType.Pair('3♠'), TrumpSuit.HEART, 2)
         self.assertEqual(len(matching_moves), 2) # Can play a pair of 10♠ or J♠
 
         # Analysis: the player only has 1 CLUB card. They need to play 1 additional card. There are 8 to choose from.
-        matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Pair('3♣'), TrumpSuit.HEART, 2)
+        matching_moves = self.cardset_all_suits.get_matching_moves(MoveType.Pair('3♣'), TrumpSuit.HEART, 2)
         self.assertEqual(len(matching_moves), 8)
 
         # Analysis: the player has no CLUB cards. So they can pick any two cards to play. If they play a trump pair, it's a RUFF so it's counted as a pair. If they choose any two other cards, it's counted as a passive combo.
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Pair('3♣'), TrumpSuit.HEART, 2)
         self.assertEqual(len(matching_moves), 28) # 7 pairs + 21 two card combos
 
-        matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Pair('4♦'), TrumpSuit.HEART, 3)
+        matching_moves = self.cardset_all_suits.get_matching_moves(MoveType.Pair('4♦'), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 1)
     
     def test_matching_moves_tractor(self):
@@ -150,19 +150,19 @@ class TestCardSet(unittest.TestCase):
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor(CardSet({'5♥': 2, '6♥': 2})), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 3) # Either [2♥ 2♥ 4♥ 4♥], [3♦ 3♦ 3♥ 3♥], or [3♥ 3♥ XJ XJ]
 
-        # Analysis: the player doesn't have a single match in the same suite. So they can choose any 4 cards.
+        # Analysis: the player doesn't have a single match in the same suit. So they can choose any 4 cards.
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor(CardSet({'5♠': 2, '6♠': 2})), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 161)
 
-        # Analysis: the player doesn't have a tractor, but has one or more pairs. They have to play them first, then choose cards of the same suite, then any card.
-        matching_moves = self.cardset_all_suites.get_matching_moves(MoveType.Tractor(CardSet({'5♦': 2, '6♦': 2})), TrumpSuit.HEART, 3)
+        # Analysis: the player doesn't have a tractor, but has one or more pairs. They have to play them first, then choose cards of the same suit, then any card.
+        matching_moves = self.cardset_all_suits.get_matching_moves(MoveType.Tractor(CardSet({'5♦': 2, '6♦': 2})), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 1) # The player has 4 diamonds and needs to play all of them.
 
         # Analysis: the player has [3♦ 3♦ 3♥ 3♥ XJ XJ] as a length-3 tractor
         matching_moves = self.cardset_simple.get_matching_moves(MoveType.Tractor(CardSet({'5♥': 2, '6♥': 2, '7♥': 2})), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 1)
 
-        matching_moves = self.cardset_big_suite.get_matching_moves(MoveType.Tractor(CardSet({'6♥': 2, '7♥': 2})), TrumpSuit.HEART, 3)
+        matching_moves = self.cardset_big_suit.get_matching_moves(MoveType.Tractor(CardSet({'6♥': 2, '7♥': 2})), TrumpSuit.HEART, 3)
         self.assertEqual(len(matching_moves), 6)
 
         # Analysis: the player has no length-3 tractors. They need to pick a length-2 tractor, and then pick some other pair.
@@ -178,7 +178,7 @@ class TestCardSet(unittest.TestCase):
         decomposition = self.cardset_multiple_small_tractors.decompose(TrumpSuit.DJ, 2)
         self.assertEqual(len(decomposition), 3)
 
-        # If the player can play combos, they can play any card combination of the same suite.
+        # If the player can play combos, they can play any card combination of the same suit.
         small_cardset = CardSet({'A♥': 1, 'K♥': 2, 'Q♥': 2, 'A♠': 1})
         combo_moves = small_cardset.get_leading_moves(TrumpSuit.DJ, 2, include_combos=True)
         self.assertEqual(len(combo_moves), 18) # 4 singles + 2 pairs + 1 tractor + 3 length-2 combos + 5 length-3 combos + 2 length-4 combos + 1 length-5 combo 
@@ -187,7 +187,7 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(len(combo_moves), 728) # Hard to tell if this is right
 
         combo_lead_move = MoveType.Combo(CardSet({'A♦': 2, 'K♦': 1}))
-        matching_moves = self.cardset_all_suites.get_matching_moves(combo_lead_move, TrumpSuit.DJ, 3)
+        matching_moves = self.cardset_all_suits.get_matching_moves(combo_lead_move, TrumpSuit.DJ, 3)
         self.assertEqual(len(matching_moves), 2) # Must play the pair of 2s, then choose either 9♦ or 10♦
 
     def test_cardset_compare_single(self):
@@ -198,14 +198,14 @@ class TestCardSet(unittest.TestCase):
         single_jack_heart = CardSet({'J♥': 1})
         single_k_heart = CardSet({'K♥': 1})
         
-        # Same suite cards. Compare rank only.
-        self.assertTrue(all([single_ace.is_bigger_than(single_k_move, suite, 2) for suite in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
-        self.assertFalse(all([single_queen.is_bigger_than(single_k_move, suite, 2) for suite in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
+        # Same suit cards. Compare rank only.
+        self.assertTrue(all([single_ace.is_bigger_than(single_k_move, suit, 2) for suit in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
+        self.assertFalse(all([single_queen.is_bigger_than(single_k_move, suit, 2) for suit in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
 
         # Trump against non-trump (ruff)
         self.assertTrue(single_jack_heart.is_bigger_than(single_k_move, TrumpSuit.HEART, 2))
 
-        # Non-trump against non-trump of different suite
+        # Non-trump against non-trump of different suit
         self.assertFalse(single_jack_heart.is_bigger_than(single_k_move, TrumpSuit.CLUB, 2))
 
         # Dominant rank is larger than other non-joker trump cards
@@ -225,8 +225,8 @@ class TestCardSet(unittest.TestCase):
 
         target_move = MoveType.Pair('K♦')
 
-        self.assertTrue(all([pair_ace_diamond.is_bigger_than(target_move, suite, 2) for suite in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
-        self.assertFalse(all([pair_king_heart.is_bigger_than(target_move, suite, 2) for suite in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.SPADE)]))
+        self.assertTrue(all([pair_ace_diamond.is_bigger_than(target_move, suit, 2) for suit in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
+        self.assertFalse(all([pair_king_heart.is_bigger_than(target_move, suit, 2) for suit in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.SPADE)]))
         self.assertTrue(pair_king_heart.is_bigger_than(target_move, TrumpSuit.HEART, 2))
         self.assertTrue(pair_king_heart.is_bigger_than(target_move, TrumpSuit.HEART, 13))
         self.assertFalse(pair_queen_diamond.is_bigger_than(target_move, TrumpSuit.SPADE, 2))
@@ -234,8 +234,8 @@ class TestCardSet(unittest.TestCase):
         # Two different jokers cannot beat any pair
         self.assertFalse(non_pair_jokers.is_bigger_than(target_move, TrumpSuit.DJ, 2))
 
-        # Pair jokers beat any non-joker pair in any suite and any rank
-        self.assertTrue(all([pair_jokers.is_bigger_than(target_move, suite, 13) for suite in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
+        # Pair jokers beat any non-joker pair in any suit and any rank
+        self.assertTrue(all([pair_jokers.is_bigger_than(target_move, suit, 13) for suit in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.DJ, TrumpSuit.HEART, TrumpSuit.SPADE)]))
 
     def test_cardset_compare_tractor(self):
         target_tractor = CardSet({ '6♦': 2, '8♦': 2 }) # Assume 7 is dominant rank
@@ -245,18 +245,18 @@ class TestCardSet(unittest.TestCase):
         option2 = CardSet({ 'XJ': 2, '7♥': 2 })
         option3 = CardSet({ '10♦': 2, 'J♦': 2 })
         
-        # If either ♥ or ♦ is trump suite, then option1 forms a tractor
-        self.assertTrue(all([option1.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuit.DIAMOND, TrumpSuit.HEART)]))
+        # If either ♥ or ♦ is trump suit, then option1 forms a tractor
+        self.assertTrue(all([option1.is_bigger_than(target_move, suit, 7) for suit in (TrumpSuit.DIAMOND, TrumpSuit.HEART)]))
 
         # Otherwise, 7♦7♦ 7♥7♥ is not a tractor
-        self.assertFalse(all([option1.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuit.DJ, TrumpSuit.SPADE, TrumpSuit.CLUB)]))
+        self.assertFalse(all([option1.is_bigger_than(target_move, suit, 7) for suit in (TrumpSuit.DJ, TrumpSuit.SPADE, TrumpSuit.CLUB)]))
 
-        # Option2 is a tractor if the trump suite is ♥ or NT 
-        self.assertTrue(all([option2.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuit.HEART, TrumpSuit.XJ)]))
-        self.assertFalse(all([option2.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuit.CLUB, TrumpSuit.SPADE, TrumpSuit.DIAMOND)]))
+        # Option2 is a tractor if the trump suit is ♥ or NT 
+        self.assertTrue(all([option2.is_bigger_than(target_move, suit, 7) for suit in (TrumpSuit.HEART, TrumpSuit.XJ)]))
+        self.assertFalse(all([option2.is_bigger_than(target_move, suit, 7) for suit in (TrumpSuit.CLUB, TrumpSuit.SPADE, TrumpSuit.DIAMOND)]))
 
         # Option3 is always a tractor given dominant rank = 7, and beats the target tractor
-        self.assertTrue(all([option3.is_bigger_than(target_move, suite, 7) for suite in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.HEART, TrumpSuit.SPADE, TrumpSuit.DJ)]))
+        self.assertTrue(all([option3.is_bigger_than(target_move, suit, 7) for suit in (TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.HEART, TrumpSuit.SPADE, TrumpSuit.DJ)]))
 
     def test_cardset_compare_combo(self):
         target1 = CardSet({'A♦': 1, 'K♦': 2})
@@ -295,14 +295,14 @@ class TestCardSet(unittest.TestCase):
 
         # Player with the largest trump pair wins (given that they play 5 trump cards containing 2 pairs)
         player0_cards = CardSet({ 'A♥': 2, 'K♥': 1, 'Q♥': 2 }) # Combo with 2 pairs and 1 single
-        player1_cards = CardSet({ '5♥': 2, '3♥': 1, '7♥': 1, 'J♥': 1 }) # Match suite
+        player1_cards = CardSet({ '5♥': 2, '3♥': 1, '7♥': 1, 'J♥': 1 }) # Match suit
         player2_cards = CardSet({ '6♠': 2, '7♠': 2, '2♣': 1 }) # Uses a tractor to ruff the combo
         player3_cards = CardSet({ 'A♠': 2, '5♠': 2, '10♠': 1 }) # Beats player2 because only the largest pair matters here.
         self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuit.SPADE, 2), 3)
 
         # Player with the largest tractor wins
         player0_cards = CardSet({ '9♥': 2, '10♥': 2 }) # 1 tractor
-        player1_cards = CardSet({ 'A♥': 2, 'K♥': 2 }) # Beats player0 in same suite
+        player1_cards = CardSet({ 'A♥': 2, 'K♥': 2 }) # Beats player0 in same suit
         player2_cards = CardSet({ '6♠': 2, '7♠': 2 }) # Ruffs using a tractor
         player3_cards = CardSet({ '2♠': 2, '2♣': 2 }) # Ruffs using bigger tractor
         self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuit.SPADE, 2), 3)
@@ -310,7 +310,7 @@ class TestCardSet(unittest.TestCase):
         # Example where player0 is the biggest
         player0_cards = CardSet({'Q♥': 2})
         player1_cards = CardSet({'3♥': 2})
-        player2_cards = CardSet({ '10♠': 1, 'J♥': 1 }) # player2 escapes 10 points in trump suite
+        player2_cards = CardSet({ '10♠': 1, 'J♥': 1 }) # player2 escapes 10 points in trump suit
         player3_cards = CardSet({ '5♥': 1, '9♥': 1 })
         self.assertEqual(CardSet.round_winner([player0_cards, player1_cards, player2_cards, player3_cards], TrumpSuit.SPADE, 2), 0)
 
@@ -318,8 +318,8 @@ class TestCardSet(unittest.TestCase):
         t1 = self.cardset_simple.tensor
         self.assertEqual(self.cardset_simple, CardSet.from_tensor(t1))
 
-        t2 = self.cardset_all_suites.tensor
-        self.assertEqual(self.cardset_all_suites, CardSet.from_tensor(t2))
+        t2 = self.cardset_all_suits.tensor
+        self.assertEqual(self.cardset_all_suits, CardSet.from_tensor(t2))
     
     def test_multiplier(self):
         base1 = MoveType.Combo(CardSet({ 'DJ': 1 }))
@@ -357,7 +357,7 @@ class TestCardSet(unittest.TestCase):
         self.assertEqual(CardSet.is_legal_combo(leading_move, [player2], TrumpSuit.HEART, 9), (False, CardSet({'6♣': 2, '7♣': 2})))
         self.assertEqual(CardSet.is_legal_combo(leading_move, [player3], TrumpSuit.CLUB, 2), (False, CardSet({'K♣': 1})))
 
-    def test_trump_suite_tensor(self):
+    def test_trump_suit_tensor(self):
         self.assertEqual(TrumpSuit.from_tensor(TrumpSuit.DIAMOND.tensor), TrumpSuit.DIAMOND)
         self.assertEqual(TrumpSuit.from_tensor(TrumpSuit.CLUB.tensor), TrumpSuit.CLUB)
         self.assertEqual(TrumpSuit.from_tensor(TrumpSuit.HEART.tensor), TrumpSuit.HEART)

@@ -9,7 +9,7 @@ ORDERING = ['A♦', 'K♦', 'Q♦', 'J♦', '10♦', '9♦', '8♦', '7♦', '6�
 ORDERING_INDEX = {k:i for i, k in enumerate(ORDERING)}
 
 class TrumpSuit(str, Enum):
-    "All the possible suites for a trump declaration."
+    "All the possible suits for a trump declaration."
     CLUB = "♣"
     SPADE = "♠"
     HEART = "♥"
@@ -34,7 +34,7 @@ class TrumpSuit(str, Enum):
         return [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.XJ, self.DJ][tensor.argmax()]
 
 class CardSuit(str, Enum):
-    "All suites that a card can belong to in a game."
+    "All suits that a card can belong to in a game."
     CLUB = "♣"
     SPADE = "♠"
     HEART = "♥"
@@ -76,9 +76,9 @@ class Stage(str, Enum):
     main_stage = 'PLAY'
 
 class Declaration:
-    "Contains information about the trump suite being declared."
-    def __init__(self, suite: TrumpSuit, level: int, position: AbsolutePosition, relative_position: RelativePosition = None) -> None:
-        self.suit = suite
+    "Contains information about the trump suit being declared."
+    def __init__(self, suit: TrumpSuit, level: int, position: AbsolutePosition, relative_position: RelativePosition = None) -> None:
+        self.suit = suit
         self.level = level
         self.absolute_position: AbsolutePosition = position
         self.relative_position = relative_position # Depends on the position of the player that observes this declaration
@@ -91,7 +91,7 @@ class Declaration:
     
     @property
     def tensor(self):
-        "A tensor of shape (7,) representing the suite and multiplicity of the declaration."
+        "A tensor of shape (7,) representing the suit and multiplicity of the declaration."
         return torch.cat([self.suit.tensor, torch.tensor([int(self.level > 1)])])
     
     def get_card(self, dominant_rank: int):
@@ -104,17 +104,17 @@ class Declaration:
 
 
     @classmethod
-    def chaodi_level(self, suite: TrumpSuit, level: int):
+    def chaodi_level(self, suit: TrumpSuit, level: int):
         if level >= 1:
-            if suite == TrumpSuit.DIAMOND:
+            if suit == TrumpSuit.DIAMOND:
                 return 1
-            elif suite == TrumpSuit.CLUB:
+            elif suit == TrumpSuit.CLUB:
                 return 2
-            elif suite == TrumpSuit.HEART:
+            elif suit == TrumpSuit.HEART:
                 return 3
-            elif suite == TrumpSuit.SPADE:
+            elif suit == TrumpSuit.SPADE:
                 return 4
-            elif suite == TrumpSuit.XJ:
+            elif suit == TrumpSuit.XJ:
                 return 5
             else: # DJ
                 return 6
@@ -141,29 +141,29 @@ LETTER_RANK = {
 NUMERIC_RANK = {v:k for k,v in LETTER_RANK.items()}
 
 def get_suit(card: str, dominant_suit: TrumpSuit, dominant_rank: int):
-    "Determines if the card is a trump card, and if not, determines which suite it is in."
+    "Determines if the card is a trump card, and if not, determines which suit it is in."
     if card == 'XJ' or card == 'DJ':
         return CardSuit.TRUMP
     
     rank = NUMERIC_RANK[card[:-1]]
-    suite = CardSuit(card[-1])
+    suit = CardSuit(card[-1])
     
-    if rank == dominant_rank or suite == dominant_suit:
+    if rank == dominant_rank or suit == dominant_suit:
         return CardSuit.TRUMP
     else:
-        return suite
+        return suit
 
-def get_rank(card: str, dominant_suite: TrumpSuit, dominant_rank: int):
-    "Get the rank of a card within its suite."
+def get_rank(card: str, dominant_suit: TrumpSuit, dominant_rank: int):
+    "Get the rank of a card within its suit."
 
     if card == 'DJ':
         return 18
     elif card == 'XJ':
         return 17
     else:
-        suite = CardSuit(card[-1])
+        suit = CardSuit(card[-1])
         rank = NUMERIC_RANK[card[:-1]]
-        if rank == dominant_rank and (suite == dominant_suite or dominant_suite.is_NT):
+        if rank == dominant_rank and (suit == dominant_suit or dominant_suit.is_NT):
             return 16
         elif rank == dominant_rank:
             return 15

@@ -20,8 +20,8 @@ class MoveType:
     @property
     def cardset(self) -> 'CardSet':
         return CardSet()
-    def suite(self, dominant_suite: TrumpSuit, dominant_rank: int) -> CardSuit:
-        "Returns the suite of the move"
+    def suit(self, dominant_suit: TrumpSuit, dominant_rank: int) -> CardSuit:
+        "Returns the suit of the move"
         raise NotImplementedError
         
     "All possible valid moves."
@@ -36,8 +36,8 @@ class MoveType:
         @property
         def multiplier(self):
             return 2
-        def suite(self, dominant_suite: TrumpSuit, dominant_rank: int) -> CardSuit:
-            return get_suit(self.card, dominant_suite, dominant_rank)
+        def suit(self, dominant_suit: TrumpSuit, dominant_rank: int) -> CardSuit:
+            return get_suit(self.card, dominant_suit, dominant_rank)
 
     class Pair(MoveType):
         def __init__(self, card: str) -> None:
@@ -50,8 +50,8 @@ class MoveType:
         @property
         def cardset(self):
             return CardSet({self.card: 2})
-        def suite(self, dominant_suite: TrumpSuit, dominant_rank: int) -> CardSuit:
-            return get_suit(self.card, dominant_suite, dominant_rank)
+        def suit(self, dominant_suit: TrumpSuit, dominant_rank: int) -> CardSuit:
+            return get_suit(self.card, dominant_suit, dominant_rank)
     
     class Tractor(MoveType):
         def __init__(self, cardset: "CardSet") -> None:
@@ -65,11 +65,11 @@ class MoveType:
         @property
         def cardset(self):
             return self._cardset
-        def suite(self, dominant_suite: TrumpSuit, dominant_rank: int) -> CardSuit:
-            return get_suit(self._cardset.card_list()[0], dominant_suite, dominant_rank)
+        def suit(self, dominant_suit: TrumpSuit, dominant_rank: int) -> CardSuit:
+            return get_suit(self._cardset.card_list()[0], dominant_suit, dominant_rank)
     
     class Combo(MoveType):
-        "An active combo move. All elements in a combo are required to have the same CardSuite."
+        "An active combo move. All elements in a combo are required to have the same CardSuit."
         def __init__(self, cardset: 'CardSet') -> None:
             self._cardset = cardset
         def __repr__(self) -> str:
@@ -78,19 +78,19 @@ class MoveType:
         def multiplier(self):
             print("Do not call .multiplier of combo directly! Use .get_multiplier(...) instead.")
             return 2
-        def get_components(self, dominant_suite: TrumpSuit, dominant_rank: int):
-            return self._cardset.decompose(dominant_suite, dominant_rank)
-        def get_multiplier(self, dominant_suite: TrumpSuit, dominant_rank: int):
-            return max([c.multiplier for c in self.get_components(dominant_suite, dominant_rank)])
+        def get_components(self, dominant_suit: TrumpSuit, dominant_rank: int):
+            return self._cardset.decompose(dominant_suit, dominant_rank)
+        def get_multiplier(self, dominant_suit: TrumpSuit, dominant_rank: int):
+            return max([c.multiplier for c in self.get_components(dominant_suit, dominant_rank)])
         @property
         def cardset(self):
             return self._cardset
-        def suite(self, dominant_suite: TrumpSuit, dominant_rank: int) -> CardSuit:
-            return self.get_components(dominant_suite, dominant_rank)[0].suite(dominant_suite, dominant_rank)
+        def suit(self, dominant_suit: TrumpSuit, dominant_rank: int) -> CardSuit:
+            return self.get_components(dominant_suit, dominant_rank)[0].suit(dominant_suit, dominant_rank)
 
     @classmethod
-    def from_cardset(self, cardset: 'CardSet', dominant_suite: TrumpSuit, dominant_rank: int):
-        components = cardset.decompose(dominant_suite, dominant_rank)
+    def from_cardset(self, cardset: 'CardSet', dominant_suit: TrumpSuit, dominant_rank: int):
+        components = cardset.decompose(dominant_suit, dominant_rank)
         if len(components) == 1:
             return components[0]
         else:
@@ -123,10 +123,10 @@ class CardSet:
     def has_card(self, card: str):
         return self._cards[card] > 0
     
-    def filter_by_suit(self, suite: CardSuit, dominant_suite: TrumpSuit, dominant_rank: int):
+    def filter_by_suit(self, suit: CardSuit, dominant_suit: TrumpSuit, dominant_rank: int):
         subset = CardSet()
         for card, count in self._cards.items():
-            if count > 0 and get_suit(card, dominant_suite, dominant_rank) == suite:
+            if count > 0 and get_suit(card, dominant_suit, dominant_rank) == suit:
                 subset.add_card(card, count)
         return subset
 
@@ -134,11 +134,11 @@ class CardSet:
     def size(self):
         return self.__len__()
     
-    def count_suit(self, suite: CardSuit, dominant_suite: TrumpSuit, dominant_rank: int):
-        "Count the total number of cards the set has in the given CardSuite."
+    def count_suit(self, suit: CardSuit, dominant_suit: TrumpSuit, dominant_rank: int):
+        "Count the total number of cards the set has in the given CardSuit."
         total_count = 0
         for card, count in self._cards.items():
-            if get_suit(card, dominant_suite, dominant_rank) == suite:
+            if get_suit(card, dominant_suit, dominant_rank) == suit:
                 total_count += count
         return total_count
 
@@ -193,9 +193,9 @@ class CardSet:
         return points
     
     def trump_declaration_options(self, rank: int):
-        """Find all the possible trump suites that the user can declare, as well as their level. Higher level declarations override lower ones.
+        """Find all the possible trump suits that the user can declare, as well as their level. Higher level declarations override lower ones.
         
-        Pair of same suite dominant rank cards: level 1
+        Pair of same suit dominant rank cards: level 1
         Pair of b&w jokers: level 2
         Pair of color jokers: level 3
         """
@@ -206,34 +206,34 @@ class CardSet:
             options[TrumpSuit.XJ] = 2
         
         letter_rank = LETTER_RANK[rank]
-        for suite in [TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.HEART, TrumpSuit.SPADE]:
-            if self._cards[letter_rank + suite] > 0:
-                options[suite] = self._cards[letter_rank + suite] - 1 # Pair has level 1, single has level 0
+        for suit in [TrumpSuit.CLUB, TrumpSuit.DIAMOND, TrumpSuit.HEART, TrumpSuit.SPADE]:
+            if self._cards[letter_rank + suit] > 0:
+                options[suit] = self._cards[letter_rank + suit] - 1 # Pair has level 1, single has level 0
         return options
     
-    def get_count(self, suite: TrumpSuit, rank: int):
-        if suite == TrumpSuit.DJ or suite == TrumpSuit.XJ:
+    def get_count(self, suit: TrumpSuit, rank: int):
+        if suit == TrumpSuit.DJ or suit == TrumpSuit.XJ:
             return self._cards['DJ'] + self._cards['XJ']
-        return self._cards[LETTER_RANK[rank] + suite]
+        return self._cards[LETTER_RANK[rank] + suit]
 
-    def get_leading_moves(self, dominant_suite: TrumpSuit, dominant_rank: int, include_combos = False):
+    def get_leading_moves(self, dominant_suit: TrumpSuit, dominant_rank: int, include_combos = False):
         "Return all possible move actions the player can make if they lead the trick."
         moves: List[MoveType] = []
-        suite_list = [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE, CardSuit.TRUMP]
+        suit_list = [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE, CardSuit.TRUMP]
         
         if include_combos:
-            cards_by_suite = {suite: CardSet() for suite in suite_list}
+            cards_by_suit = {suit: CardSet() for suit in suit_list}
             for card in self.card_list():
-                cards_by_suite[get_suit(card, dominant_suite, dominant_rank)].add_card(card)
-            for suite, suite_cardset in cards_by_suite.items():
-                if suite == CardSuit.TRUMP: continue
+                cards_by_suit[get_suit(card, dominant_suit, dominant_rank)].add_card(card)
+            for suit, suit_cardset in cards_by_suit.items():
+                if suit == CardSuit.TRUMP: continue
                 records = set()
-                for size in range(1, suite_cardset.size + 1):
-                    for combo in itertools.combinations(suite_cardset.card_list(), size):
+                for size in range(1, suit_cardset.size + 1):
+                    for combo in itertools.combinations(suit_cardset.card_list(), size):
                         combo_cardset = CardSet()
                         for move in combo:
                             combo_cardset.add_card(move)
-                        components = combo_cardset.decompose(dominant_suite, dominant_rank)
+                        components = combo_cardset.decompose(dominant_suit, dominant_rank)
                         if combo_cardset not in records:
                             records.add(combo_cardset)
                             moves.append(MoveType.Combo(combo_cardset) if len(components) > 1 else components[0])
@@ -250,17 +250,17 @@ class CardSet:
                 pair_cards.append(card)
             
         # Add all tractors
-        if not dominant_suite.is_NT:
-            suite_list.remove(dominant_suite)
+        if not dominant_suit.is_NT:
+            suit_list.remove(dominant_suit)
         
-        pairs_by_suite = {suite: [] for suite in suite_list}
+        pairs_by_suit = {suit: [] for suit in suit_list}
         for card in pair_cards:
-            pairs_by_suite[get_suit(card, dominant_suite, dominant_rank)].append(card)
+            pairs_by_suit[get_suit(card, dominant_suit, dominant_rank)].append(card)
 
-        for suite, cards in pairs_by_suite.items():
+        for suit, cards in pairs_by_suit.items():
             card_ranks: List[Tuple[int, str]] = []
             for card in cards:
-                rank = get_rank(card, dominant_suite, dominant_rank)
+                rank = get_rank(card, dominant_suit, dominant_rank)
                 card_ranks.append((rank, card))
             
             grouped_ranks = [(r, list(cards)) for r, cards in itertools.groupby(sorted(card_ranks), key=lambda x: x[0])]
@@ -278,23 +278,23 @@ class CardSet:
 
         return moves
     
-    def decompose(self, dominant_suite: TrumpSuit, dominant_rank: int) -> List[Union[MoveType.Single, MoveType.Pair, MoveType.Tractor]]:
+    def decompose(self, dominant_suit: TrumpSuit, dominant_rank: int) -> List[Union[MoveType.Single, MoveType.Pair, MoveType.Tractor]]:
         "Decompose a leading move into components using a greedy approach."
         remaining_cards = self.copy()
         components = []
         while remaining_cards.size > 0:
-            largest = max(remaining_cards.get_leading_moves(dominant_suite, dominant_rank), key=lambda move: move.cardset.size)
+            largest = max(remaining_cards.get_leading_moves(dominant_suit, dominant_rank), key=lambda move: move.cardset.size)
             remaining_cards.remove_cardset(largest.cardset)
             components.append(largest)
         
         return components
 
-    def get_matching_moves(self, target: MoveType, dominant_suite: TrumpSuit, dominant_rank: int):
-        target_suite = target.suite(dominant_suite, dominant_rank) # We need to first figure out the suite of the move the player is following.
+    def get_matching_moves(self, target: MoveType, dominant_suit: TrumpSuit, dominant_rank: int):
+        target_suit = target.suit(dominant_suit, dominant_rank) # We need to first figure out the suit of the move the player is following.
         
         # Convenient helper function that returns a list of longest tractors in a CardSet
         def get_longest_tractors(cardset: CardSet) -> Tuple[int, List[MoveType.Tractor]]:
-            tractors = sorted([t for t in cardset.get_leading_moves(dominant_suite, dominant_rank) if isinstance(t, MoveType.Tractor) and t.suite(dominant_suite, dominant_rank) == target_suite], key=lambda t: t.cardset.size, reverse=True)
+            tractors = sorted([t for t in cardset.get_leading_moves(dominant_suit, dominant_rank) if isinstance(t, MoveType.Tractor) and t.suit(dominant_suit, dominant_rank) == target_suit], key=lambda t: t.cardset.size, reverse=True)
             
             if not tractors: return 0, []
 
@@ -306,27 +306,27 @@ class CardSet:
 
         def matches_for_simple_move(target: Union[MoveType.Single, MoveType.Pair, MoveType.Tractor], hand: CardSet):
             matches: Set[CardSet] = set()
-            same_suite_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suit(card, dominant_suite, dominant_rank) == target_suite}
-            suite_count = hand.count_suit(target_suite, dominant_suite, dominant_rank)
+            same_suit_cards = {card:v for card,v in hand._cards.items() if v > 0 and get_suit(card, dominant_suit, dominant_rank) == target_suit}
+            suit_count = hand.count_suit(target_suit, dominant_suit, dominant_rank)
 
             if isinstance(target, MoveType.Single):
-                if len(same_suite_cards) > 0:
-                    for card in same_suite_cards:
+                if len(same_suit_cards) > 0:
+                    for card in same_suit_cards:
                         matches.add(CardSet({card: 1}))
                 else:
                     for card, count in hand._cards.items():
                         if count > 0:
                             matches.add(CardSet({card: 1}))
             elif isinstance(target, MoveType.Pair):
-                if suite_count > len(same_suite_cards): # If total count is greater than variety count, then there must be a pair
-                    for card, count in same_suite_cards.items():
+                if suit_count > len(same_suit_cards): # If total count is greater than variety count, then there must be a pair
+                    for card, count in same_suit_cards.items():
                         if count == 2:
                             matches.add(CardSet({card: 2}))
-                elif suite_count >= 2:
-                    for c1, c2 in itertools.combinations(same_suite_cards, 2):
+                elif suit_count >= 2:
+                    for c1, c2 in itertools.combinations(same_suit_cards, 2):
                         matches.add(CardSet({c1: 1, c2: 1}))
-                elif suite_count == 1:
-                    fixed_card, _ = same_suite_cards.popitem()
+                elif suit_count == 1:
+                    fixed_card, _ = same_suit_cards.popitem()
                     for card, count in hand._cards.items():
                         if count > 0 and card != fixed_card:
                             matches.add(CardSet({fixed_card: 1, card: 1}))
@@ -340,20 +340,20 @@ class CardSet:
                             chosen_records.add((card1, card2))
                             matches.add(CardSet({card1: 1, card2: 1}))
             elif isinstance(target, MoveType.Tractor):
-                if suite_count >= target.cardset.size:
-                    # If there are enough cards in the suite, enumerate all possible tractors and check if the player has them
+                if suit_count >= target.cardset.size:
+                    # If there are enough cards in the suit, enumerate all possible tractors and check if the player has them
                     
-                    exact_tractors = [t.cardset for t in hand.get_leading_moves(dominant_suite, dominant_rank) if isinstance(t, MoveType.Tractor) and t.suite(dominant_suite, dominant_rank) == target_suite and t.cardset.size == target.cardset.size]
+                    exact_tractors = [t.cardset for t in hand.get_leading_moves(dominant_suit, dominant_rank) if isinstance(t, MoveType.Tractor) and t.suit(dominant_suit, dominant_rank) == target_suit and t.cardset.size == target.cardset.size]
                     matches.update(exact_tractors)
                     
                     if not exact_tractors:                        
-                        s, tractor_list = get_longest_tractors(CardSet(same_suite_cards))
+                        s, tractor_list = get_longest_tractors(CardSet(same_suit_cards))
                         if s > 0:
                             # Find all non-overlapping combinations of tractors
                             non_overlapping_tractors: List[List[CardSet]] = []
                             max_non_overlapping_size = 0 # maximum group size of non-overlapping tractors with size s
                             for ordering in itertools.permutations(tractor_list):
-                                available_cards = CardSet(same_suite_cards)
+                                available_cards = CardSet(same_suit_cards)
                                 tractor_combination: List[CardSet] = []
                                 for tractor in ordering:
                                     if available_cards.contains(tractor.cardset):
@@ -398,30 +398,30 @@ class CardSet:
                                         complete_move.add_cardset(tractor)
                                     matches.add(complete_move)
 
-                if not matches: # if we did not find a tractor in the same suite, the player needs to first play pairs
-                    pairs = set([card for (card, count) in same_suite_cards.items() if count == 2])
+                if not matches: # if we did not find a tractor in the same suit, the player needs to first play pairs
+                    pairs = set([card for (card, count) in same_suit_cards.items() if count == 2])
                     if len(pairs) * 2 >= target.cardset.size: # If the player as at least as many pairs as the tractor size, choose any combination of the appropriate length
                         for pair_subset in itertools.combinations(pairs, target.cardset.size // 2):
                             matches.add(CardSet({p:2 for p in pair_subset}))
                 
                 if not matches:
-                    # The player doesn't have enough pairs to add up to the length of the tractor, so they must play all those pairs, but in addition, they also need to play other cards of the same suite so that they add up to the tractor’s size.
+                    # The player doesn't have enough pairs to add up to the length of the tractor, so they must play all those pairs, but in addition, they also need to play other cards of the same suit so that they add up to the tractor’s size.
                     must_choose_cards = {p:2 for p in pairs}
-                    remaining_suite_choices = [c for c in same_suite_cards if c not in pairs]
-                    if len(pairs) * 2 + len(remaining_suite_choices) >= target.cardset.size:
-                        for remaining_suite_cards in itertools.combinations(remaining_suite_choices, target.cardset.size - len(pairs) * 2):
+                    remaining_suit_choices = [c for c in same_suit_cards if c not in pairs]
+                    if len(pairs) * 2 + len(remaining_suit_choices) >= target.cardset.size:
+                        for remaining_suit_cards in itertools.combinations(remaining_suit_choices, target.cardset.size - len(pairs) * 2):
                             cardset = CardSet(must_choose_cards)
-                            for card in remaining_suite_cards:
+                            for card in remaining_suit_cards:
                                 cardset.add_card(card)
                             matches.add(cardset)
                     else:
-                        for suite_choice in remaining_suite_choices:
-                            must_choose_cards[suite_choice] = 1
+                        for suit_choice in remaining_suit_choices:
+                            must_choose_cards[suit_choice] = 1
                 
-                if not matches: # The player doesn't have enough suite cards to match the tractor. So they must choose among the rest.
+                if not matches: # The player doesn't have enough suit cards to match the tractor. So they must choose among the rest.
                     remaining_other_choices = [c for c in self.card_list() if c not in must_choose_cards]
                     records = set()
-                    for remaining_other_cards in itertools.combinations(remaining_other_choices, target.cardset.size - len(pairs) * 2 - len(remaining_suite_choices)):
+                    for remaining_other_cards in itertools.combinations(remaining_other_choices, target.cardset.size - len(pairs) * 2 - len(remaining_suit_choices)):
                         cardset = CardSet(must_choose_cards)
                         for card in remaining_other_cards:
                             cardset.add_card(card)
@@ -433,7 +433,7 @@ class CardSet:
             return sorted(matches, key=lambda c: c.__str__())
 
         if isinstance(target, MoveType.Combo):
-            largest_component = max(target.get_components(dominant_suite, dominant_rank), key=lambda c: c.cardset.size)
+            largest_component = max(target.get_components(dominant_suit, dominant_rank), key=lambda c: c.cardset.size)
             remaining_target = target.cardset.copy()
             remaining_target.remove_cardset(largest_component.cardset)
             
@@ -443,7 +443,7 @@ class CardSet:
                 for c1_match in component_matches:
                     remaining_self = self.copy()
                     remaining_self.remove_cardset(c1_match)
-                    remaining_matches = remaining_self.get_matching_moves(MoveType.Combo(remaining_target), dominant_suite, dominant_rank)
+                    remaining_matches = remaining_self.get_matching_moves(MoveType.Combo(remaining_target), dominant_suit, dominant_rank)
                     for remaining_match in remaining_matches:
                         combined = c1_match.copy()
                         combined.add_cardset(remaining_match)
@@ -454,39 +454,39 @@ class CardSet:
         else:
             return matches_for_simple_move(target, self)
                 
-    def is_bigger_than(self, move: MoveType, dominant_suite: TrumpSuit, dominant_rank: int):
+    def is_bigger_than(self, move: MoveType, dominant_suit: TrumpSuit, dominant_rank: int):
         "Determine if this cardset can beat a given move. If so, return the decomposition. If not, return None."
         # assert self.size == move.cardset.size, "CardSets must be the same size to compare"
 
-        self_components = self.get_leading_moves(dominant_suite, dominant_rank)
+        self_components = self.get_leading_moves(dominant_suit, dominant_rank)
         first_component = max(self_components, key=lambda c: c.cardset.size)
-        target_suite = move.suite(dominant_suite, dominant_rank)
-        self_suite = first_component.suite(dominant_suite, dominant_rank) 
+        target_suit = move.suit(dominant_suit, dominant_rank)
+        self_suit = first_component.suit(dominant_suit, dominant_rank) 
 
         if isinstance(move, MoveType.Single) or isinstance(move, MoveType.Pair):
             if type(first_component) != type(move): return None
-            self_rank = get_rank(first_component.card, dominant_suite, dominant_rank)
-            target_rank = get_rank(move.card, dominant_suite, dominant_rank)
+            self_rank = get_rank(first_component.card, dominant_suit, dominant_rank)
+            target_rank = get_rank(move.card, dominant_suit, dominant_rank)
             
-            if self_suite == target_suite and self_rank > target_rank or target_suite != CardSuit.TRUMP and self_suite == CardSuit.TRUMP:
+            if self_suit == target_suit and self_rank > target_rank or target_suit != CardSuit.TRUMP and self_suit == CardSuit.TRUMP:
                 return [first_component]
         elif isinstance(move, MoveType.Tractor):
             if type(first_component) != type(move) or first_component.cardset.size < move.cardset.size: return None # You must have a tractor of equal size to beat the move (your tractor can't be longer, because your move and the target move have the same # of cards)
 
-            self_max_rank = max([get_rank(card, dominant_suite, dominant_rank) for card in self.card_list()])
-            target_max_rank = max([get_rank(card, dominant_suite, dominant_rank) for card in move.cardset.card_list()])
-            if target_suite == CardSuit.TRUMP:
-                # Both trump suite; compare largest rank
-                if self_suite == CardSuit.TRUMP and self_max_rank > target_max_rank:
+            self_max_rank = max([get_rank(card, dominant_suit, dominant_rank) for card in self.card_list()])
+            target_max_rank = max([get_rank(card, dominant_suit, dominant_rank) for card in move.cardset.card_list()])
+            if target_suit == CardSuit.TRUMP:
+                # Both trump suit; compare largest rank
+                if self_suit == CardSuit.TRUMP and self_max_rank > target_max_rank:
                     return [first_component]
             else:
-                # If you have the same suite, you need to be bigger. Or, any trump tractor dominates any non-trump tractor of the same length.
-                if self_suite == CardSuit.TRUMP or (self_suite == target_suite and self_max_rank > target_max_rank):
+                # If you have the same suit, you need to be bigger. Or, any trump tractor dominates any non-trump tractor of the same length.
+                if self_suit == CardSuit.TRUMP or (self_suit == target_suit and self_max_rank > target_max_rank):
                     return [first_component]
         elif isinstance(move, MoveType.Combo):
-            if self_suite != CardSuit.TRUMP and self_suite != target_suite: return None
+            if self_suit != CardSuit.TRUMP and self_suit != target_suit: return None
 
-            target_components = move.get_components(dominant_suite, dominant_rank)
+            target_components = move.get_components(dominant_suit, dominant_rank)
             target_max_component = max(target_components, key=lambda c: c.cardset.size)
             possible_matches = [c for c in self_components if type(c) == type(target_max_component) and c.cardset.size == target_max_component.cardset.size]
 
@@ -499,7 +499,7 @@ class CardSet:
                 remaining_cards.remove_cardset(possible_matches[0].cardset)
                 remaining_target = CardSet(move.cardset._cards)
                 remaining_target.remove_cardset(target_max_component.cardset)
-                rest: Union[None, List[MoveType]] = remaining_cards.is_bigger_than(MoveType.Combo(remaining_target), dominant_suite, dominant_rank)
+                rest: Union[None, List[MoveType]] = remaining_cards.is_bigger_than(MoveType.Combo(remaining_target), dominant_suit, dominant_rank)
                 if rest:
                     return [first_component] + rest
                 else:
@@ -507,23 +507,23 @@ class CardSet:
         else:
             raise AssertionError("Shouldn't get here")
 
-    def min_rank(self, dominant_suite: TrumpSuit, dominant_rank: int):
-        return min([get_rank(x, dominant_suite, dominant_rank) for x in self.card_list()])
+    def min_rank(self, dominant_suit: TrumpSuit, dominant_rank: int):
+        return min([get_rank(x, dominant_suit, dominant_rank) for x in self.card_list()])
 
     @classmethod
-    def is_legal_combo(self, move: MoveType.Combo, other_players_cardsets: List['CardSet'], dominant_suite: TrumpSuit, dominant_rank: int):
-        filtered_cardsets: List[CardSet] = [c.filter_by_suit(move.suite(dominant_suite, dominant_rank), dominant_suite, dominant_rank) for c in other_players_cardsets]
+    def is_legal_combo(self, move: MoveType.Combo, other_players_cardsets: List['CardSet'], dominant_suit: TrumpSuit, dominant_rank: int):
+        filtered_cardsets: List[CardSet] = [c.filter_by_suit(move.suit(dominant_suit, dominant_rank), dominant_suit, dominant_rank) for c in other_players_cardsets]
         
         def key_fn(move: MoveType):
             "Returns the maximum rank of the largest component of a move"
-            return (move.cardset.size, max([get_rank(card, dominant_suite, dominant_rank) for card in move.cardset.card_list()]))
+            return (move.cardset.size, max([get_rank(card, dominant_suit, dominant_rank) for card in move.cardset.card_list()]))
         
-        decomposition = sorted(move.cardset.decompose(dominant_suite, dominant_rank), key=lambda m: m.cardset.size)
+        decomposition = sorted(move.cardset.decompose(dominant_suit, dominant_rank), key=lambda m: m.cardset.size)
         if len(decomposition) == 1: return True, None
         for component in decomposition:
             for cardset in filtered_cardsets:
-                if cardset.size < component.cardset.size: continue # If the player's total cards in the suite is less than the component, he cannot possibly suppress the combo
-                moves = [c.decompose(dominant_suite, dominant_rank)[0] for c in cardset.get_matching_moves(component, dominant_suite, dominant_rank)]
+                if cardset.size < component.cardset.size: continue # If the player's total cards in the suit is less than the component, he cannot possibly suppress the combo
+                moves = [c.decompose(dominant_suit, dominant_rank)[0] for c in cardset.get_matching_moves(component, dominant_suit, dominant_rank)]
                 moves: List[MoveType] = [m for m in moves if type(m) == type(component) and m.cardset.size == component.cardset.size]
                 
                 if moves:
@@ -561,26 +561,26 @@ class CardSet:
         return deck, ordering
 
     @classmethod
-    def round_winner(self, cardsets: List['CardSet'], dominant_suite: TrumpSuit, dominant_rank: int):
+    def round_winner(self, cardsets: List['CardSet'], dominant_suit: TrumpSuit, dominant_rank: int):
         "Determine the position of the largest move."
 
-        leading_move = MoveType.from_cardset(cardsets[0], dominant_suite, dominant_rank)
+        leading_move = MoveType.from_cardset(cardsets[0], dominant_suit, dominant_rank)
         follow_cardsets = cardsets[1:]
         if len(follow_cardsets) == 0:
             return 0
 
-        configs = [move.is_bigger_than(leading_move, dominant_suite, dominant_rank) for move in follow_cardsets]
+        configs = [move.is_bigger_than(leading_move, dominant_suit, dominant_rank) for move in follow_cardsets]
         
         def key_fn(move: MoveType):
             "Returns the maximum rank of the largest component of a move"
-            return (move.cardset.size, max([get_rank(card, dominant_suite, dominant_rank) for card in move.cardset.card_list()]))
+            return (move.cardset.size, max([get_rank(card, dominant_suit, dominant_rank) for card in move.cardset.card_list()]))
 
         ranks = [1] + [0] * len(follow_cardsets)
         for i, config in enumerate(configs, start=1):
             if config:
                 best_component: MoveType = max(config, key=key_fn)
                 # Add 100 to trump components so that they are definitely bigger than non-trump components.
-                ranks[i] = key_fn(best_component)[1] + (100 if best_component.suite(dominant_suite, dominant_rank) == CardSuit.TRUMP else 0)
+                ranks[i] = key_fn(best_component)[1] + (100 if best_component.suit(dominant_suit, dominant_rank) == CardSuit.TRUMP else 0)
         
         return max(range(len(cardsets)), key=lambda i: ranks[i]) 
 

@@ -13,7 +13,7 @@ from env.Actions import *
 from collections import deque
 
 class Simulation:
-    def __init__(self, player1: SJAgent, player2: SJAgent=None, discount=0.99, enable_chaodi=True, enable_combos=False, eval=False, epsilon=0.02, learn_from_eval=False, oracle_duration=0, game_count=0, combo_penalty=0.1) -> None:
+    def __init__(self, player1: SJAgent, player2: SJAgent=None, discount=0.99, enable_chaodi=True, enable_combos=False, eval=False, epsilon=0.02, learn_from_eval=False, oracle_duration=0, game_count=0, combo_penalty=0.1, combo_alternation=False) -> None:
         "If eval = True, use random agents for East and West."
 
         self.oracle_duration = oracle_duration
@@ -25,7 +25,8 @@ class Simulation:
             enable_chaodi=enable_chaodi,
             enable_combos=enable_combos,
             oracle_value=self.oracle_value,
-            combo_penalty=combo_penalty
+            combo_penalty=combo_penalty,
+            combo_alternation=combo_alternation
         )
 
         self.current_player = None
@@ -58,7 +59,7 @@ class Simulation:
         }
         self.kitty_history: List[Tuple[Observation, Action, float, Observation]] = []
 
-        # (state, action, reward) tuples for each player who declared a trump suite
+        # (state, action, reward) tuples for each player who declared a trump suit
         self._declaration_history_per_player: Dict[AbsolutePosition, List[Tuple[Observation, Action, float]]] = {
             AbsolutePosition.NORTH: [],
             AbsolutePosition.SOUTH: [],

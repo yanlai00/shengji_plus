@@ -36,7 +36,7 @@ You can also play with an agent using the interactive mode:
 python TrainLoop.py --eval-only --model-folder my/model1 --eval-agent interactive --single-process --eval-size 1 --verbose
 ```
 
-In interactive mode, `ShengJi+` controls the North and South players, and you control East and West.
+In interactive mode, `ShengJi+` controls the North and South players, and you control East and West. The `--verbose` flag will print out detailed information at each stage of a game.
 
 **Strategic Agent**: In addition to the random agent, we provide a rule-based baseline defined in `agents/StrategicAgent.py`. If you would like to match an agent with this baseline, run 
 

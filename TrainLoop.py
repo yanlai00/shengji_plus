@@ -26,7 +26,7 @@ global_kitty_queue = ctx.Queue(maxsize=25)
 actor_processes = []
 
 # Parallelized data sampling
-def sampler(idx: int, player: SJAgent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, enable_chaodi: bool, enable_combos: bool, epsilon=0.02, reuse_times=0, oracle_duration=0, game_count=0, log_file='', combo_penalty=0.1):
+def sampler(idx: int, player: SJAgent, discount, decay_factor, global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, enable_chaodi: bool, enable_combos: bool, epsilon=0.02, reuse_times=0, oracle_duration=0, game_count=0, log_file='', combo_penalty=0.1, combo_alternation=False):
     logging.getLogger().setLevel(logging.ERROR)
     # logging.basicConfig(format="%(process)d %(message)s", filename=log_file, encoding='utf-8', level=logging.DEBUG)
     train_sim = Simulation(
@@ -102,7 +102,7 @@ def evaluator(idx: int, player1: SJAgent, player2: SJAgent, enable_chaodi: bool,
     
 
 
-def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, chaodi=True, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, oracle_duration=0, max_games=500000, combo_penalty=0.1, dynamic_encoding=True):
+def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_size: int, compare: str = None, discount=0.99, decay_factor=1.2, chaodi=True, combos=False, verbose=False, random_seed=1, single_process=False, epsilon=0.01, tau=0.995, kitty_agent='fc', eval_agent_type='random', learn_from_eval=False, reuse_times=0, oracle_duration=0, max_games=500000, combo_penalty=0.1, dynamic_encoding=True, combo_alternation=False, actor_process_count=6, eval_process_count=7):
     os.makedirs(model_folder, exist_ok=True)
     torch.manual_seed(0)
     random.seed(random_seed)
@@ -184,9 +184,8 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
         shutil.copyfile('networks/Models.py', f'{model_folder}/Models.py')
     
     if not eval_only:
-        processes_count = 10 if agent_type == 'mc' and not combos else 6
-        for i in range(1 if single_process else processes_count):
-            actor = ctx.Process(target=sampler, args=(i, agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, chaodi, combos, epsilon, reuse_times, oracle_duration // processes_count, iterations // processes_count, f"{model_folder}/debug{i}.log", combo_penalty))
+        for i in range(1 if single_process else actor_process_count):
+            actor = ctx.Process(target=sampler, args=(i, agent, discount, decay_factor ** (1 / games), global_main_queue, global_chaodi_queue, global_declare_queue, global_kitty_queue, chaodi, combos, epsilon, reuse_times, oracle_duration // actor_process_count, iterations // actor_process_count, f"{model_folder}/debug{i}.log", combo_penalty, combo_alternation))
             actor.start()
             actor_processes.append(actor)
             
@@ -229,15 +228,14 @@ def train(agent_type: str, games: int, model_folder: str, eval_only: bool, eval_
             opposition_points = eval_sim.opposition_points
             print(f"Average inference time: {np.mean(eval_sim.inference_times)}s")
         else:
-            eval_count = 7 if not eval_only else 12
             # eval_size = max(1, eval_size // eval_count * eval_count) # Must be multiple of eval_count
             win_counts = [0, 0] # Defenders, opponents
             level_counts = [0, 0]
             opposition_points = [[], []]
             eval_queue = ctx.Queue()
             eval_actors = []
-            for i in range(min(eval_size, eval_count)):
-                actor = ctx.Process(target=evaluator, args=(i, agent, eval_agent, chaodi, combos, max(1, eval_size // eval_count), eval_queue, verbose, learn_from_eval, f"{model_folder}/eval{i}.log"))
+            for i in range(min(eval_size, eval_process_count)):
+                actor = ctx.Process(target=evaluator, args=(i, agent, eval_agent, chaodi, combos, max(1, eval_size // eval_process_count), eval_queue, verbose, learn_from_eval, f"{model_folder}/eval{i}.log"))
                 actor.start()
                 eval_actors.append(actor)
         
@@ -306,5 +304,8 @@ if __name__ == '__main__':
     parser.add_argument('--max-games', type=int, default=500000)
     parser.add_argument('--combo-penalty', type=float, default=0.1)
     parser.add_argument('--static-encoding', action='store_true')
+    parser.add_argument('--combo-alternation', action='store_true')
+    parser.add_argument('--actor-processes', type=int, default=6)
+    parser.add_argument('--eval-processes', type=int, default=7)
     args = parser.parse_args()
-    train(args.agent_type, args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, not args.disable_chaodi, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.oracle_duration, args.max_games, args.combo_penalty, not args.static_encoding)
+    train(args.agent_type, args.games, args.model_folder, args.eval_only, args.eval_size, args.compare, args.discount, args.decay_factor, not args.disable_chaodi, args.enable_combos, args.verbose, args.random_seed, args.single_process, args.epsilon, args.tau, args.kitty_agent, args.eval_agent, args.learn_from_eval, args.reuse_times, args.oracle_duration, args.max_games, args.combo_penalty, not args.static_encoding, args.combo_alternation, args.actor_processes, args.eval_processes)

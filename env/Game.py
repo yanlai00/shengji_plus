@@ -11,7 +11,7 @@ from .CardSet import CardSet, MoveType
 import logging
 
 class Game:
-    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, oracle_value=0.0, combo_penalty=0.1) -> None:
+    def __init__(self, dominant_rank=2, dealer_position: AbsolutePosition = None, enable_chaodi = True, enable_combos = False, deck: List[str] = None, is_warmup_game=False, oracle_value=0.0, combo_penalty=0.1, combo_alternation=False) -> None:
         # Player information
         self.hands = {
             AbsolutePosition.NORTH: CardSet(),
@@ -41,8 +41,8 @@ class Game:
         self.kitty_stage_completed = False # True if the kitty is fixed.
         self.kitty_owner = dealer_position
         self.dominant_rank = dominant_rank
-        self.declarations: List[Declaration] = [] # Information about who declared the trump suite, what it is, and its level
-        self.current_declaration_turn: AbsolutePosition = None # Once a player declares a trump suite, every other player takes turn to decide if they want to override.
+        self.declarations: List[Declaration] = [] # Information about who declared the trump suit, what it is, and its level
+        self.current_declaration_turn: AbsolutePosition = None # Once a player declares a trump suit, every other player takes turn to decide if they want to override.
         self.initial_declaration_position: AbsolutePosition = None # Record the position of the first player that started the declaration round while drawing cards
         self.is_initial_game = dealer_position is None # Whether overriding the declaration lets the overrider becomes the dealer.
         self.dealer_position = dealer_position # Position of the dealer. At the start of game 1, the dealer is not determined yet.
@@ -69,6 +69,7 @@ class Game:
         self.oracle_value = oracle_value # the coefficient for the oracle
         self.consecutive_moves = 0
         self.combo_penalty = combo_penalty
+        self.combo_alternation = combo_alternation
     @property
     def dominant_suit(self):
         return self.declarations[-1].suit if self.declarations else TrumpSuit.XJ
@@ -94,9 +95,9 @@ class Game:
 
         if self.stage == Stage.declare_stage: # Stage 1: drawing cards phase
             if not self.is_warmup_game:
-                for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                    if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suit == suite or self.declarations[-1].absolute_position != position):
-                        actions.append(DeclareAction(Declaration(suite, level, position)))
+                for suit, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
+                    if not self.declarations or self.declarations[-1].level < level and (self.declarations[-1].suit == suit or self.declarations[-1].absolute_position != position):
+                        actions.append(DeclareAction(Declaration(suit, level, position)))
             actions.append(DontDeclareAction())
         elif self.hands[position].size > 25: # Stage 2: choosing the kitty
             for card, count in self.hands[position]._cards.items():
@@ -104,15 +105,17 @@ class Game:
         elif self.current_chaodi_turn == position:
             # Chaodi
             if self.enable_chaodi and self.declarations:
-                for suite, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
-                    if self.declarations and Declaration.chaodi_level(suite, level) > Declaration.chaodi_level(self.declarations[-1].suit, self.declarations[-1].level):
-                        actions.append(ChaodiAction(Declaration(suite, level, position)))
-                        logging.debug(f"{position.value} can chaodi using {suite.value}")
+                for suit, level in self.hands[position].trump_declaration_options(self.dominant_rank).items():
+                    if self.declarations and Declaration.chaodi_level(suit, level) > Declaration.chaodi_level(self.declarations[-1].suit, self.declarations[-1].level):
+                        actions.append(ChaodiAction(Declaration(suit, level, position)))
+                        logging.debug(f"{position.value} can chaodi using {suit.value}")
             actions.append(DontChaodiAction())
         elif self.round_history[-1][0] == position:
+            # In combo alternation mode, players at positions East or West cannot play combo moves
             if not self.enable_combos or not self.round_history[-1][1]:
+                ban_combos = self.combo_alternation and position in (AbsolutePosition.EAST, AbsolutePosition.WEST)
                 for move in self.hands[position].get_leading_moves(self.dominant_suit, self.dominant_rank):
-                    actions.append(LeadAction(move) if self.enable_combos else EndLeadAction(move))
+                    actions.append(LeadAction(move) if (self.enable_combos and not ban_combos) else EndLeadAction(move))
             else:
                 current_action = self.round_history[-1][1][0]
                 current_action_suit = get_suit(current_action.card_list()[0], self.dominant_suit, self.dominant_rank)
@@ -186,7 +189,7 @@ class Game:
                 return self.current_declaration_turn, 0
         
         elif isinstance(action, DeclareAction):
-            assert not self.declarations or self.declarations[-1].level < action.declaration.level, "New trump suite declaration must have higher level than the existing one."
+            assert not self.declarations or self.declarations[-1].level < action.declaration.level, "New trump suit declaration must have higher level than the existing one."
             assert self.hands[player_position].get_count(action.declaration.suit, self.dominant_rank) >= 1, "Invalid declaration"
             
             if self.dealer_position is None or self.is_initial_game:
@@ -212,24 +215,24 @@ class Game:
         elif isinstance(action, PlaceKittyAction):
             assert self.kitty.size < 8, "Kitty already has 8 cards"
 
-            suite_count_before = 0
-            for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
-                if self.hands[player_position].count_suit(suite, self.dominant_suit, self.dominant_rank) > 0:
-                    suite_count_before += 1
+            suit_count_before = 0
+            for suit in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
+                if self.hands[player_position].count_suit(suit, self.dominant_suit, self.dominant_rank) > 0:
+                    suit_count_before += 1
             trump_count_before = self.hands[player_position].count_suit(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
 
             self.kitty.add_card(action.card)
             self.hands[player_position].remove_card(action.card)
             logging.debug(f"Player {player_position} discarded {action.card} to kitty")
 
-            suite_count_after = 0
+            suit_count_after = 0
             trump_count_after = 0
-            for suite in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
-                if self.hands[player_position].count_suit(suite, self.dominant_suit, self.dominant_rank) > 0:
-                    suite_count_after += 1
+            for suit in [CardSuit.CLUB, CardSuit.DIAMOND, CardSuit.HEART, CardSuit.SPADE]:
+                if self.hands[player_position].count_suit(suit, self.dominant_suit, self.dominant_rank) > 0:
+                    suit_count_after += 1
             trump_count_after = self.hands[player_position].count_suit(CardSuit.TRUMP, self.dominant_suit, self.dominant_rank)
             
-            reward = 0.2 * (suite_count_before - suite_count_after) # Encourage players to get rid of a suite completely
+            reward = 0.2 * (suit_count_before - suit_count_after) # Encourage players to get rid of a suit completely
             if trump_count_after < trump_count_before:
                 reward -= 0.5 # Discourage players from discarding trump cards
             if get_rank(action.card, self.dominant_suit, self.dominant_rank) >= 15:
