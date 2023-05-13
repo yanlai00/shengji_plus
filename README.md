@@ -45,4 +45,6 @@ python TrainLoop.py --eval-only --model-folder my/model1 --eval-agent strategic 
 ```
 
 ### Checkpoints
-Will be uploaded soon
+| Model      | Checkpoint |
+| ----------- | ----------- |
+| Default     | [1180000](http://jiaruishan.com/files/shengji_plus/1180000.zip)       |
