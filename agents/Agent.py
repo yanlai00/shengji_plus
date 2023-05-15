@@ -10,9 +10,9 @@ from torch import nn
 
 sys.path.append('.')
 from env.Observation import Observation
-from env.Actions import Action, ChaodiAction, DeclareAction, DontChaodiAction, DontDeclareAction, FollowAction, LeadAction, PlaceKittyAction
+from env.Actions import Action
 from env.utils import Stage
-from env.CardSet import CardSet, MoveType
+from env.CardSet import CardSet
 
 from env.utils import AbsolutePosition
 
@@ -30,33 +30,17 @@ class SJAgent:
     def __init__(self, name: str) -> None:
         self.name = name
 
-        self.declare_module: StageModule = None
-        self.kitty_module: StageModule = None
-        self.chaodi_module: StageModule = None
         self.main_module: StageModule = None
     
     def act(self, obs: Observation, epsilon=None, training=True):
-        assert self.declare_module is not None and self.kitty_module is not None and self.main_module is not None, "At least one required model is not loaded"
-        if obs.stage == Stage.declare_stage:
-            return self.declare_module.act(obs, epsilon, training)
-        elif obs.stage == Stage.kitty_stage:
-            return self.kitty_module.act(obs, epsilon, training)
-        elif obs.stage == Stage.chaodi_stage:
-            assert self.chaodi_module is not None, "chaodi module must be configured when chaodi mode is turned on"
-            return self.chaodi_module.act(obs, epsilon, training)
-        elif obs.stage == Stage.main_stage:
+        assert self.main_module is not None, "At least one required model is not loaded"
+        if obs.stage == Stage.main_stage:
             return self.main_module.act(obs, epsilon, training)
         else:
             raise NotImplementedError()
     
     def learn_from_samples(self, samples: List[Tuple[Observation, Action, float]], stage: Stage):
-        if stage == Stage.declare_stage:
-            self.declare_module.learn_from_samples(samples)
-        elif stage == Stage.kitty_stage:
-            self.kitty_module.learn_from_samples(samples)
-        elif stage == Stage.chaodi_stage:
-            self.chaodi_module.learn_from_samples(samples)
-        elif stage == Stage.main_stage:
+        if stage == Stage.main_stage:
             self.main_module.learn_from_samples(samples)
         else:
             raise NotImplementedError()

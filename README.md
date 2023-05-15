@@ -14,7 +14,7 @@ python TrainLoop.py --model-folder <SAVE_PATH>
 
 There are many options that you can add to this training command. The current best result is produced by the command
 ```shell
-python TrainLoop.py --model-folder <SAVE_PATH> --discount 0.95 --epsilon 0.015 --games 2000 --eval-size 300 --enable-combos --combo-penalty 0.01
+python TrainLoop.py --model-folder <SAVE_PATH> --discount 0.95 --epsilon 0.015 --games 2000 --eval-size 300
 ```
 
 ## Evaluation

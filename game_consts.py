@@ -1,0 +1,2 @@
+
+TOTAL_CARDS = 52

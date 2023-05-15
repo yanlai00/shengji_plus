@@ -5,7 +5,7 @@ from enum import Enum
 import torch
 import numpy as np
 
-ORDERING = ['A♦', 'K♦', 'Q♦', 'J♦', '10♦', '9♦', '8♦', '7♦', '6♦', '5♦', '4♦', '3♦', '2♦', 'A♣', 'K♣', 'Q♣', 'J♣', '10♣', '9♣', '8♣', '7♣', '6♣', '5♣', '4♣', '3♣', '2♣', 'A♥', 'K♥', 'Q♥', 'J♥', '10♥', '9♥', '8♥', '7♥', '6♥', '5♥', '4♥', '3♥', '2♥', 'A♠', 'K♠', 'Q♠', 'J♠', '10♠', '9♠', '8♠', '7♠', '6♠', '5♠', '4♠', '3♠', '2♠', 'XJ', 'DJ']
+ORDERING = ['A♦', 'K♦', 'Q♦', 'J♦', '10♦', '9♦', '8♦', '7♦', '6♦', '5♦', '4♦', '3♦', '2♦', 'A♣', 'K♣', 'Q♣', 'J♣', '10♣', '9♣', '8♣', '7♣', '6♣', '5♣', '4♣', '3♣', '2♣', 'A♥', 'K♥', 'Q♥', 'J♥', '10♥', '9♥', '8♥', '7♥', '6♥', '5♥', '4♥', '3♥', '2♥', 'A♠', 'K♠', 'Q♠', 'J♠', '10♠', '9♠', '8♠', '7♠', '6♠', '5♠', '4♠', '3♠', '2♠']
 ORDERING_INDEX = {k:i for i, k in enumerate(ORDERING)}
 
 class TrumpSuit(str, Enum):
@@ -14,24 +14,23 @@ class TrumpSuit(str, Enum):
     SPADE = "♠"
     HEART = "♥"
     DIAMOND = "♦"
-    XJ = "XJ" # NT type 1
-    DJ = "DJ" # NT type 2
+    NT = "NT"
 
     @property
     def is_NT(self):
-        return self == 'XJ' or self == 'DJ'
+        return self == 'NT'
     
     @property
     def tensor(self):
         rep = torch.zeros(6)
-        idx = [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.XJ, self.DJ].index(self)
+        idx = [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.NT].index(self)
         rep[idx] = 1
         return rep
     
     @classmethod
     def from_tensor(self, tensor: torch.Tensor) -> None:
         assert tensor.shape[0] == 6 and torch.sum(tensor == 1) == 1 and tensor.sum() == 1, "tensor must be one hot encoded"
-        return [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.XJ, self.DJ][tensor.argmax()]
+        return [self.DIAMOND, self.CLUB, self.HEART, self.SPADE, self.NT][tensor.argmax()]
 
 class CardSuit(str, Enum):
     "All suits that a card can belong to in a game."
@@ -70,9 +69,6 @@ class AbsolutePosition(str, Enum):
         return random.choice([AbsolutePosition.NORTH, AbsolutePosition.SOUTH, AbsolutePosition.EAST, AbsolutePosition.WEST])
 
 class Stage(str, Enum):
-    declare_stage = 'DECLARE'
-    kitty_stage = 'KITTY'
-    chaodi_stage = 'CHAODI'
     main_stage = 'PLAY'
 
 class Declaration:
@@ -94,34 +90,6 @@ class Declaration:
         "A tensor of shape (7,) representing the suit and multiplicity of the declaration."
         return torch.cat([self.suit.tensor, torch.tensor([int(self.level > 1)])])
     
-    def get_card(self, dominant_rank: int):
-        rank_symbol = LETTER_RANK[dominant_rank]
-        count = 1 if self.level == 0 else 2
-        if self.suit == TrumpSuit.XJ or self.suit == TrumpSuit.DJ:
-            return self.suit.value, count
-        else:
-            return rank_symbol + self.suit.value, count
-
-
-    @classmethod
-    def chaodi_level(self, suit: TrumpSuit, level: int):
-        if level >= 1:
-            if suit == TrumpSuit.DIAMOND:
-                return 1
-            elif suit == TrumpSuit.CLUB:
-                return 2
-            elif suit == TrumpSuit.HEART:
-                return 3
-            elif suit == TrumpSuit.SPADE:
-                return 4
-            elif suit == TrumpSuit.XJ:
-                return 5
-            else: # DJ
-                return 6
-        else:
-            return 0
-
-    
 LETTER_RANK = {
     2: '2',
     3: '3',
@@ -140,37 +108,18 @@ LETTER_RANK = {
 
 NUMERIC_RANK = {v:k for k,v in LETTER_RANK.items()}
 
-def get_suit(card: str, dominant_suit: TrumpSuit, dominant_rank: int):
+def get_suit(card: str, dominant_suit: TrumpSuit):
     "Determines if the card is a trump card, and if not, determines which suit it is in."
-    if card == 'XJ' or card == 'DJ':
-        return CardSuit.TRUMP
-    
-    rank = NUMERIC_RANK[card[:-1]]
     suit = CardSuit(card[-1])
-    
-    if rank == dominant_rank or suit == dominant_suit:
+    if suit == dominant_suit:
         return CardSuit.TRUMP
     else:
         return suit
 
-def get_rank(card: str, dominant_suit: TrumpSuit, dominant_rank: int):
+def get_rank(card: str):
     "Get the rank of a card within its suit."
-
-    if card == 'DJ':
-        return 18
-    elif card == 'XJ':
-        return 17
-    else:
-        suit = CardSuit(card[-1])
-        rank = NUMERIC_RANK[card[:-1]]
-        if rank == dominant_rank and (suit == dominant_suit or dominant_suit.is_NT):
-            return 16
-        elif rank == dominant_rank:
-            return 15
-        elif rank < dominant_rank:
-            return rank + 1 # shift the rank of cards smaller than dominant rank by 1 to support tractors across the dominant rank
-        else:
-            return rank
+    rank = NUMERIC_RANK[card[:-1]]
+    return rank
 
 def softmax(arr):
     return np.exp(arr) / np.sum(np.exp(arr))

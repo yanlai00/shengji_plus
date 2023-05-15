@@ -7,10 +7,10 @@ from typing import Deque, List, Tuple, TypeVar, Generic
 import numpy as np
 
 from .Agent import SJAgent, StageModule
-from .DMCAgent import DeclareModule, KittyModule, ChaodiModule, DMCModule
+from .DMCAgent import DMCModule
 
 sys.path.append('.')
-from env.Actions import Action, FollowAction, LeadAction, AppendLeadAction, EndLeadAction
+from env.Actions import Action, FollowAction, LeadAction
 from env.Observation import Observation
 from networks.Models import *
 
@@ -81,7 +81,7 @@ class MainModule(DMCModule):
         next_action_entropy = torch.zeros(len(samples))
         terminals = torch.zeros(len(samples), 1)
         for i, (obs, ac, rw, aux) in enumerate(samples):
-            assert isinstance(ac, LeadAction) or isinstance(ac, AppendLeadAction) or isinstance(ac, EndLeadAction) or isinstance(ac, FollowAction)
+            assert isinstance(ac, LeadAction) or isinstance(ac, FollowAction)
             if aux is not None:
                 (next_obs, max_action_prob, next_entropy) = aux
             else:
@@ -92,14 +92,12 @@ class MainModule(DMCModule):
                 obs.dealer_position_tensor, # (4,)
                 obs.trump_tensor, # (20,)
                 obs.declarer_position_tensor, # (4,)
-                obs.chaodi_times_tensor, # (4,)
                 obs.points_tensor, # (80,)
                 obs.unplayed_cards_dynamic_tensor, # (108,)
                 current_moves, # (328,)
-                obs.kitty_dynamic_tensor, # (108,)
                 obs.dominates_all_tensor(ac.cardset),
             ])
-            x_batch[i] = torch.cat([state_tensor, ac.dynamic_tensor(obs.dominant_suit, obs.dominant_rank)])
+            x_batch[i] = torch.cat([state_tensor, ac.dynamic_tensor(obs.dominant_suit)])
             history_batch[i] = historical_moves
             
             if next_obs is not None:
@@ -110,11 +108,9 @@ class MainModule(DMCModule):
                     next_obs.dealer_position_tensor, # (4,)
                     next_obs.trump_tensor, # (20,)
                     next_obs.declarer_position_tensor, # (4,)
-                    next_obs.chaodi_times_tensor, # (4,)
                     next_obs.points_tensor, # (80,)
                     next_obs.unplayed_cards_dynamic_tensor, # (108,)
                     next_current_moves, # (328,)
-                    next_obs.kitty_dynamic_tensor
                 ])
                 next_state_batch[i] = next_state_tensor
                 next_history_batch[i] = next_historical_moves
@@ -153,17 +149,11 @@ class DQNAgent(SJAgent):
     def __init__(self, name: str, discount=0.95, sac=False) -> None:
         super().__init__(name)
 
-        self.declare_module: DeclareModule = DeclareModule(batch_size=64)
-        self.kitty_module: KittyModule = KittyModule(batch_size=32)
-        self.chaodi_module: ChaodiModule = ChaodiModule(batch_size=32)
         self.sac = sac
         self.main_module: MainModule = MainModule(batch_size=64, discount=discount, sac=sac)
 
     def optimizer_states(self):
         return {
-            'declare_optim_state': self.declare_module.optimizer.state_dict(),
-            'kitty_optim_state': self.kitty_module.optimizer.state_dict(),
-            'chaodi_optim_state': self.chaodi_module.optimizer.state_dict(),
             'main_optim_state': self.main_module.optimizer.state_dict(),
             'value_optim_state': self.main_module.value_optimizer.state_dict(),
             'alpha_optim_state': self.main_module.alpha_optimizer.state_dict() if self.sac else None,
@@ -172,9 +162,6 @@ class DQNAgent(SJAgent):
 
     def load_optimizer_states(self, state):
         self.main_module.optimizer.load_state_dict(state['main_optim_state'])
-        self.kitty_module.optimizer.load_state_dict(state['kitty_optim_state'])
-        self.declare_module.optimizer.load_state_dict(state['declare_optim_state'])
-        self.chaodi_module.optimizer.load_state_dict(state['chaodi_optim_state'])
         self.main_module.value_optimizer.load_state_dict(state['value_optim_state'])
         if self.sac:
             self.main_module.log_alpha.data = torch.tensor(state['alpha']).log()
@@ -182,29 +169,6 @@ class DQNAgent(SJAgent):
 
     def load_models_from_disk(self, train_models):
         loaded_models = True
-        declare_model: nn.Module = train_models.DeclarationModel().cuda()
-        if os.path.exists(f'{self.name}/declare.pt'):
-            declare_model.load_state_dict(torch.load(f'{self.name}/declare.pt', map_location='cuda'), strict=False)
-            print("Using loaded model for declaration")
-        else:
-            loaded_models = False
-        self.declare_module.load_model(declare_model)
-
-        kitty_model: nn.Module = train_models.KittyModel().cuda()
-        if os.path.exists(f'{self.name}/kitty.pt'):
-            kitty_model.load_state_dict(torch.load(f'{self.name}/kitty.pt', map_location='cuda'), strict=False)
-            print("Using loaded model for kitty")
-        else:
-            loaded_models = False
-        self.kitty_module.load_model(kitty_model)
-
-        chaodi_model: nn.Module = train_models.ChaodiModel().cuda()
-        if os.path.exists(f'{self.name}/chaodi.pt'):
-            chaodi_model.load_state_dict(torch.load(f'{self.name}/chaodi.pt', map_location='cuda'), strict=False)
-            print("Using loaded model for chaodi")
-        else:
-            loaded_models = False
-        self.chaodi_module.load_model(chaodi_model)
 
         try:
             with open(f'{self.name}/stats.pkl', mode='rb') as f:
@@ -230,16 +194,9 @@ class DQNAgent(SJAgent):
         return loaded_models, stats[-1]['iterations'] if loaded_models else 0
 
     def save_models_to_disk(self):
-        torch.save(self.declare_module._model.state_dict(), self.name + '/declare.pt')
-        torch.save(self.kitty_module._model.state_dict(), self.name + '/kitty.pt')
-        if self.chaodi_module._model is not None:
-            torch.save(self.chaodi_module._model.state_dict(), self.name + '/chaodi.pt')
         torch.save(self.main_module._model.state_dict(), self.name + '/main.pt')
         torch.save(self.main_module.v_model.state_dict(), self.name + '/value.pt')
     
     def clear_loss_histories(self):
-        self.declare_module.train_loss_history.clear()
-        self.kitty_module.train_loss_history.clear()
-        self.chaodi_module.train_loss_history.clear()
         self.main_module.train_loss_history.clear()
         self.main_module.value_loss_history.clear()

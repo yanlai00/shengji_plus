@@ -9,7 +9,6 @@ from networks.Models import *
 
 class InteractiveAgent(SJAgent):
     def act(self, obs: Observation, **kwargs):
-        if len(obs.actions) == 1 and obs.stage == Stage.declare_stage: return obs.actions[0]
         print(f'current hand ({obs.position.value}):', obs.hand)
         for i, a in enumerate(obs.actions):
             print(f'{i:>5}\t{a}')
